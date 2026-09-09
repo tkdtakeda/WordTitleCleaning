@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Word タイトル クリーニング</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ============================ ヘッダー ============================ -->
+  <header class="appbar">
+    <div class="appbar__brand">
+      <span class="appbar__mark" aria-hidden="true"><i class="fa-solid fa-file-word"></i></span>
+      <div class="appbar__names">
+        <h1 class="appbar__title">Word タイトル クリーニング</h1>
+        <p class="appbar__subtitle">ドキュメントプロパティの「タイトル」だけを空にします</p>
+      </div>
+    </div>
+    <div class="appbar__tools">
+      <button type="button" class="iconbtn" id="btn-help" title="使い方を開く" aria-label="使い方を開く">
+        <i class="fa-regular fa-circle-question" aria-hidden="true"></i>
+      </button>
+      <div class="menu-wrap">
+        <button type="button" class="iconbtn" id="btn-menu" title="その他の操作" aria-label="その他の操作"
+                aria-haspopup="true" aria-expanded="false">
+          <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
+        </button>
+        <div class="menu" id="menu" hidden role="menu">
+          <button type="button" class="menu__item" id="btn-clear-samples" role="menuitem">
+            <i class="fa-solid fa-flask" aria-hidden="true"></i>
+            <span class="menu__label">サンプルデータだけを消す</span>
+            <span class="menu__hint" id="menu-sample-count">0 件</span>
+          </button>
+          <button type="button" class="menu__item" id="btn-clear-done" role="menuitem">
+            <i class="fa-regular fa-circle-check" aria-hidden="true"></i>
+            <span class="menu__label">変換済みだけを消す</span>
+            <span class="menu__hint" id="menu-done-count">0 件</span>
+          </button>
+          <div class="menu__sep" role="separator"></div>
+          <button type="button" class="menu__item" id="btn-log" role="menuitem">
+            <i class="fa-solid fa-clipboard-list" aria-hidden="true"></i>
+            <span class="menu__label">診断ログを表示</span>
+            <span class="menu__hint" id="menu-log-count">0 件</span>
+          </button>
+          <div class="menu__sep" role="separator"></div>
+          <button type="button" class="menu__item menu__item--danger" id="btn-clear-all" role="menuitem">
+            <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+            <span class="menu__label">一覧をすべて消す</span>
+            <span class="menu__hint" id="menu-all-count">0 件</span>
+          </button>
+          <p class="menu__note">消したあとに「取り消す」ボタンが出ます。</p>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============================ メイン ============================ -->
+  <main class="workspace" id="workspace">
+
+    <div class="dropzone" id="dropzone">
+      <div class="dropzone__inner">
+        <span class="dropzone__icon" aria-hidden="true"><i class="fa-solid fa-file-arrow-down"></i></span>
+        <div class="dropzone__text">
+          <p class="dropzone__lead">ここに Word ファイルをドロップ</p>
+          <p class="dropzone__sub" id="dropzone-sub">ドロップすると、そのままタイトルを空にして保存します</p>
+        </div>
+        <div class="dropzone__actions">
+          <button type="button" class="btn btn--ghost" id="btn-pick">
+            <i class="fa-regular fa-folder-open" aria-hidden="true"></i>
+            <span>ファイルを選ぶ（一覧に追加）</span>
+          </button>
+          <p class="dropzone__note">対応形式: .docx / .docm / .dotx / .dotm / .doc / .dot　フォルダーごとのドロップも可。Ctrl+V での貼り付けは一覧に追加します</p>
+        </div>
+      </div>
+      <input type="file" id="file-input" multiple accept=".docx,.docm,.dotx,.dotm,.doc,.dot" hidden>
+    </div>
+
+    <section class="filelist" aria-labelledby="filelist-title">
+      <div class="filelist__head">
+        <h2 class="filelist__title" id="filelist-title">
+          <i class="fa-solid fa-list-check" aria-hidden="true"></i>
+          <span>ファイル一覧</span>
+        </h2>
+        <p class="filelist__counts" id="filelist-counts">まだファイルがありません</p>
+      </div>
+
+      <div class="filelist__scroll" id="filelist-scroll">
+        <ul class="rows" id="rows"></ul>
+        <div class="emptystate" id="emptystate">
+          <span class="emptystate__icon" aria-hidden="true"><i class="fa-regular fa-folder-open"></i></span>
+          <p class="emptystate__lead">ファイルを入れると、ここに一覧が出ます</p>
+          <p class="emptystate__sub">まず試すなら、右の「サンプルデータ」から読み込めます</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============================ 設定（脇） ============================ -->
+  <aside class="sidebar" aria-label="設定">
+
+    <!-- 毎回使う設定なので、たたまずに常に出しておく -->
+    <section class="panel panel--primary">
+      <h2 class="panel__title">
+        <i class="fa-solid fa-eraser" aria-hidden="true"></i>
+        <span>タイトルの処理</span>
+      </h2>
+      <div class="panel__body">
+        <fieldset class="radios">
+          <legend class="sr-only">タイトルをどうするか</legend>
+          <label class="radio">
+            <input type="radio" name="title-mode" value="clear" checked>
+            <span class="radio__body">
+              <span class="radio__title">タイトルを空にする</span>
+              <span class="radio__desc">タイトルの文字を取り除きます</span>
+            </span>
+          </label>
+          <label class="radio">
+            <input type="radio" name="title-mode" value="set">
+            <span class="radio__body">
+              <span class="radio__title">タイトルを設定する</span>
+              <span class="radio__desc">全ファイルに同じタイトルを入れます</span>
+            </span>
+          </label>
+        </fieldset>
+
+        <p class="field__hint" id="title-clear-note">
+          <code>docProps/core.xml</code> の <code>&lt;dc:title&gt;</code> を要素ごと取り除きます。
+          もともとタイトルが無いファイルは、1 バイトも変更せずそのまま出力します。
+        </p>
+
+        <div class="subfields" id="title-set-fields" hidden>
+          <div class="field">
+            <div class="field__label field__label--split">
+              <label for="input-title">設定するタイトル<span class="field__req">必須</span></label>
+              <span class="counter counter--inline" id="title-counter">0 文字</span>
+            </div>
+            <input type="text" id="input-title" class="input input--lg" maxlength="255"
+                   placeholder="例: 令和六年度 業務改善提案書" autocomplete="off" spellcheck="false">
+          </div>
+          <p class="field__hint" id="title-hint">一覧のすべてのファイルに、この同じタイトルを設定します。</p>
+          <div class="applied" id="title-applied" hidden>
+            <i class="fa-solid fa-arrow-right-long" aria-hidden="true"></i>
+            <span class="applied__label">反映される値</span>
+            <span class="applied__value" id="title-preview"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <details class="panel" id="panel-naming">
+      <summary class="panel__summary">
+        <span class="panel__summary-main">
+          <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>
+          <span>出力ファイル名</span>
+        </span>
+        <span class="panel__summary-state" id="naming-state">そのまま</span>
+        <i class="fa-solid fa-chevron-down panel__chevron" aria-hidden="true"></i>
+      </summary>
+      <div class="panel__body">
+        <fieldset class="radios">
+          <legend class="sr-only">出力ファイル名の付け方</legend>
+          <label class="radio">
+            <input type="radio" name="name-mode" value="same" checked>
+            <span class="radio__body">
+              <span class="radio__title">元の名前のまま</span>
+              <span class="radio__desc">リネームしません</span>
+            </span>
+          </label>
+          <label class="radio">
+            <input type="radio" name="name-mode" value="text">
+            <span class="radio__body">
+              <span class="radio__title">元の名前 ＋ 自由記述</span>
+              <span class="radio__desc">全ファイルに同じ文字を付けます</span>
+            </span>
+          </label>
+          <label class="radio">
+            <input type="radio" name="name-mode" value="serial">
+            <span class="radio__body">
+              <span class="radio__title">元の名前 ＋ 連番</span>
+              <span class="radio__desc">一覧の並び順に番号を振ります</span>
+            </span>
+          </label>
+        </fieldset>
+
+        <div class="subfields" id="naming-text-fields" hidden>
+          <label class="field">
+            <span class="field__label">付ける文字</span>
+            <input type="text" id="input-name-text" class="input" maxlength="40" autocomplete="off" spellcheck="false">
+          </label>
+          <p class="field__hint field__hint--warn" id="name-text-warn" hidden>
+            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+            ファイル名に使えない文字（\ / : * ? " &lt; &gt; |）は取り除きます
+          </p>
+        </div>
+
+        <div class="subfields subfields--row" id="naming-serial-fields" hidden>
+          <label class="field field--xs">
+            <span class="field__label">区切り</span>
+            <input type="text" id="input-serial-sep" class="input" maxlength="3" autocomplete="off" spellcheck="false">
+          </label>
+          <label class="field field--xs">
+            <span class="field__label">開始番号</span>
+            <input type="text" id="input-serial-start" class="input" inputmode="numeric" maxlength="6" autocomplete="off">
+          </label>
+          <label class="field field--xs">
+            <span class="field__label">桁数</span>
+            <input type="text" id="input-serial-digits" class="input" inputmode="numeric" maxlength="1" autocomplete="off" data-advance="1">
+          </label>
+        </div>
+
+        <fieldset class="segmented" id="naming-position" hidden>
+          <legend class="field__label">付ける位置</legend>
+          <label class="segmented__item">
+            <input type="radio" name="name-position" value="suffix" checked>
+            <span>名前の末尾</span>
+          </label>
+          <label class="segmented__item">
+            <input type="radio" name="name-position" value="prefix">
+            <span>名前の先頭</span>
+          </label>
+        </fieldset>
+
+        <div class="preview" id="naming-preview">
+          <p class="preview__label"><i class="fa-regular fa-eye" aria-hidden="true"></i> 出力名の例</p>
+          <p class="preview__value" id="naming-preview-value">ファイルを入れると、ここに実際の名前が出ます</p>
+        </div>
+      </div>
+    </details>
+
+    <details class="panel" id="panel-save">
+      <summary class="panel__summary">
+        <span class="panel__summary-main">
+          <i class="fa-solid fa-download" aria-hidden="true"></i>
+          <span>保存のしかた</span>
+        </span>
+        <span class="panel__summary-state" id="save-state">自動</span>
+        <i class="fa-solid fa-chevron-down panel__chevron" aria-hidden="true"></i>
+      </summary>
+      <div class="panel__body">
+        <fieldset class="radios">
+          <legend class="sr-only">保存方法</legend>
+          <label class="radio">
+            <input type="radio" name="save-mode" value="auto" checked>
+            <span class="radio__body">
+              <span class="radio__title">自動で切り替える</span>
+              <span class="radio__desc">1 件は個別、2 件以上は ZIP 1 つ</span>
+            </span>
+          </label>
+          <label class="radio">
+            <input type="radio" name="save-mode" value="each">
+            <span class="radio__body">
+              <span class="radio__title">いつも個別に保存</span>
+              <span class="radio__desc">2 件以上ではブラウザの許可確認が出ます</span>
+            </span>
+          </label>
+          <label class="radio">
+            <input type="radio" name="save-mode" value="zip">
+            <span class="radio__body">
+              <span class="radio__title">いつも ZIP にまとめる</span>
+              <span class="radio__desc">ZIP の中では出力名がそのまま残ります</span>
+            </span>
+          </label>
+        </fieldset>
+
+        <div class="field" id="zipname-field">
+          <label class="field__label" for="input-zip-name">ZIP のファイル名</label>
+          <input type="text" id="input-zip-name" class="input" maxlength="60" autocomplete="off" spellcheck="false">
+          <p class="field__hint" id="zipname-hint">保存名: </p>
+        </div>
+
+        <label class="check">
+          <input type="checkbox" id="check-autorun" checked>
+          <span>ドロップしたら、そのまま変換して保存する</span>
+        </label>
+        <p class="field__hint">
+          外すと、ドロップしたファイルは一覧に入るだけになります。
+          「ファイルを選ぶ」は、この設定にかかわらず一覧に追加するだけです。
+        </p>
+      </div>
+    </details>
+
+    <details class="panel" id="panel-samples">
+      <summary class="panel__summary">
+        <span class="panel__summary-main">
+          <i class="fa-solid fa-flask" aria-hidden="true"></i>
+          <span>サンプルデータ</span>
+        </span>
+        <span class="panel__summary-state" id="sample-state">0 件</span>
+        <i class="fa-solid fa-chevron-down panel__chevron" aria-hidden="true"></i>
+      </summary>
+      <div class="panel__body">
+        <p class="field__hint">
+          その場で本物の Word ファイルを作って一覧に入れます。変換後に Word で開けば結果を確認できます。
+        </p>
+        <div class="samplelist" id="samplelist"></div>
+        <div class="samplebtns">
+          <button type="button" class="btn btn--ghost btn--block" id="btn-load-samples">
+            <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+            <span>チェックしたサンプルを読み込む</span>
+          </button>
+          <button type="button" class="btn btn--quiet btn--block" id="btn-clear-samples-2">
+            <i class="fa-solid fa-eraser" aria-hidden="true"></i>
+            <span>サンプルデータだけを消す</span>
+          </button>
+        </div>
+      </div>
+    </details>
+
+    <p class="sidebar__foot">
+      <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+      ファイルはこのパソコンの中だけで処理され、どこにも送信されません。
+    </p>
+  </aside>
+
+  <!-- ============================ 実行バー ============================ -->
+  <footer class="actionbar">
+    <div class="actionbar__status" id="status" data-tone="neutral">
+      <span class="actionbar__icon" aria-hidden="true"><i class="fa-regular fa-circle-question"></i></span>
+      <span class="actionbar__text" id="status-text">Word ファイルを入れてください</span>
+    </div>
+    <div class="actionbar__progress" id="progress" hidden>
+      <div class="bar"><div class="bar__fill" id="bar-fill"></div></div>
+      <span class="actionbar__progresstext" id="progress-text"></span>
+    </div>
+    <button type="button" class="btn btn--primary btn--cta" id="btn-run" disabled>
+      <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+      <span id="btn-run-label">タイトルを空にして保存</span>
+    </button>
+  </footer>
+</div>
+
+<!-- ============================ 全画面ドロップ ============================ -->
+<div class="dropveil" id="dropveil" hidden>
+  <div class="dropveil__card">
+    <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i>
+    <p class="dropveil__lead">ここに離すと読み込みます</p>
+    <p class="dropveil__sub" id="dropveil-sub"></p>
+  </div>
+</div>
+
+<!-- ============================ トースト ============================ -->
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<!-- ============================ 使い方モーダル ============================ -->
+<div class="modal" id="modal-help" hidden>
+  <div class="modal__backdrop" data-close="1"></div>
+  <div class="modal__panel" role="dialog" aria-modal="true" aria-labelledby="help-title">
+    <header class="modal__head">
+      <h2 class="modal__title" id="help-title">
+        <i class="fa-regular fa-circle-question" aria-hidden="true"></i>
+        このツールの使い方
+      </h2>
+      <button type="button" class="iconbtn" data-close="1" aria-label="閉じる">
+        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+      </button>
+    </header>
+
+    <div class="modal__body">
+      <section class="help">
+        <h3 class="help__h">できること</h3>
+        <p class="help__p">
+          Word ファイル（.docx / .docm / .dotx / .dotm と、旧形式の .doc / .dot）の
+          <strong>ドキュメントプロパティ「タイトル」だけ</strong>を、まとめて空にします。
+          Word でいう〈ファイル → 情報 → プロパティ → タイトル〉の欄です。
+          配布前にタイトルへ残った旧ファイル名や見出しを消したいとき、
+          ドロップするだけで一括処理できます。
+        </p>
+        <p class="help__p">
+          切り替えれば、逆に<strong>全ファイルへ同じタイトルを設定する</strong>こともできます。
+          ただし設定できるのは .docx 系のみです（下記「旧形式 .doc について」を参照）。
+        </p>
+      </section>
+
+      <section class="help">
+        <h3 class="help__h">使い方</h3>
+        <ol class="steps">
+          <li class="steps__item">
+            <span class="steps__num">1</span>
+            <div>
+              <p class="steps__title">ファイルをドロップする</p>
+              <p class="steps__desc">
+                これだけで、タイトルを空にして保存まで進みます。
+                フォルダーごとのドロップにも対応します。
+              </p>
+            </div>
+          </li>
+          <li class="steps__item">
+            <span class="steps__num">2</span>
+            <div>
+              <p class="steps__title">中身を確かめたいときは「ファイルを選ぶ」</p>
+              <p class="steps__desc">
+                こちらは一覧に追加するだけで、実行ボタンを押すまで何もしません。
+                現在のタイトルを一覧で確認してから実行できます。Ctrl+V での貼り付けも同じ動きです。
+              </p>
+            </div>
+          </li>
+          <li class="steps__item">
+            <span class="steps__num">3</span>
+            <div>
+              <p class="steps__title">画面下のボタンを押す</p>
+              <p class="steps__desc">押せないときは、その理由がボタンの左に出ています。</p>
+            </div>
+          </li>
+        </ol>
+      </section>
+
+      <section class="help">
+        <h3 class="help__h">「空にする」の中身</h3>
+        <ul class="help__ul">
+          <li><code>docProps/core.xml</code> の <code>&lt;dc:title&gt;</code> を<strong>要素ごと取り除きます</strong>。タイトルの文字はファイルのどこにも残りません。</li>
+          <li>もともとタイトルが無いファイルは、<strong>1 バイトも変更せず</strong>元のファイルをそのまま出力します。落としたファイルの数と保存されるファイルの数は必ず一致します。</li>
+          <li>タイトル以外のプロパティ（作成者・会社名・キーワードなど）は消えません。</li>
+        </ul>
+      </section>
+
+      <section class="help">
+        <h3 class="help__h">保存のされ方</h3>
+        <ul class="help__ul">
+          <li>1 件なら、そのファイル 1 つがダウンロードされます。</li>
+          <li>2 件以上なら、既定では ZIP 1 つにまとまります（ZIP の中では出力名がそのまま残ります）。</li>
+          <li>ダウンロードフォルダーに同じ名前のファイルがあると、ブラウザが自動で <code>(1)</code> を付けます。これはブラウザの動作でツールからは変えられません。</li>
+        </ul>
+      </section>
+
+      <section class="help">
+        <h3 class="help__h">変更されないもの</h3>
+        <p class="help__p">
+          .docx 系で書き換えるのは <code>docProps/core.xml</code> だけ、.doc で書き換えるのは
+          <code>SummaryInformation</code> のタイトルの値だけです。
+          本文・書式・作成者・作成日時・更新日時・その他のプロパティには一切触れません。
+          タイトル以外のパートは<strong>圧縮されたままのバイト列をそのまま複製</strong>するので、内容が変化しません。
+          一覧の各行にある「根拠」ボタンから、実際に何を書き換えたかを確認できます。
+        </p>
+      </section>
+
+      <section class="help">
+        <h3 class="help__h">旧形式 .doc について</h3>
+        <ul class="help__ul">
+          <li><strong>「タイトルを空にする」は .doc でもそのまま使えます。</strong> .docx に変換する必要はありません。</li>
+          <li>.doc ではタイトルが <code>SummaryInformation</code> という領域に入っています。その文字を 0 で塗りつぶすので、<strong>ファイルの大きさも中の構造も一切変わりません</strong>。</li>
+          <li><strong>「タイトルを設定する」は .doc では行えません。</strong> 文字数によって領域の大きさが変わり、ファイルを作り直す必要があってリスクが高いためです。設定したい場合は Word で .docx として保存し直してください。該当するファイルは一覧で「この形式は対象外」と表示されます。</li>
+        </ul>
+      </section>
+
+      <section class="help">
+        <h3 class="help__h">できないこと</h3>
+        <ul class="help__ul">
+          <li>パスワードで保護されたファイルは処理できません。</li>
+          <li>ZIP64 形式（極端に大きいファイル）、暗号化された ZIP は読み取れません。</li>
+          <li>タイトル以外のプロパティ（作成者・会社名など）は消えません。Word の〈ドキュメント検査〉をお使いください。</li>
+          <li>元のファイルを直接書き換えることはできません。必ず新しいファイルとして保存されます。</li>
+        </ul>
+      </section>
+
+      <section class="help">
+        <h3 class="help__h">動作環境</h3>
+        <p class="help__p">
+          Microsoft Edge / Google Chrome（バージョン 103 以降）で、この HTML をそのまま開いて使えます。
+          サーバーも追加のインストールも不要です。ファイルはこのパソコンの中だけで処理され、どこにも送信されません。
+          アイコンの表示にだけインターネット接続を使います。
+        </p>
+      </section>
+    </div>
+
+    <footer class="modal__foot">
+      <label class="check">
+        <input type="checkbox" id="check-help-start">
+        <span>次に開いたときも、この説明を表示する</span>
+      </label>
+      <span class="version" id="app-version"></span>
+      <button type="button" class="btn btn--primary" data-close="1">
+        <i class="fa-solid fa-check" aria-hidden="true"></i>
+        <span>閉じる</span>
+      </button>
+    </footer>
+  </div>
+</div>
+
+<!-- ============================ 診断ログ ============================ -->
+<div class="modal" id="modal-log" hidden>
+  <div class="modal__backdrop" data-close="1"></div>
+  <div class="modal__panel" role="dialog" aria-modal="true" aria-labelledby="log-title">
+    <header class="modal__head">
+      <h2 class="modal__title" id="log-title">
+        <i class="fa-solid fa-clipboard-list" aria-hidden="true"></i>
+        診断ログ
+      </h2>
+      <button type="button" class="iconbtn" data-close="1" aria-label="閉じる">
+        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+      </button>
+    </header>
+    <div class="modal__body">
+      <p class="help__p">
+        ドロップした内容や、ファイルを読めなかった理由をここに残しています。
+        うまくいかないときは、この内容をコピーして共有してください。
+      </p>
+      <pre class="logview" id="log-text"></pre>
+    </div>
+    <footer class="modal__foot">
+      <div class="modal__footleft">
+        <button type="button" class="btn btn--ghost" id="btn-log-copy">
+          <i class="fa-regular fa-copy" aria-hidden="true"></i>
+          <span id="btn-log-copy-label">クリップボードにコピー</span>
+        </button>
+        <button type="button" class="btn btn--quiet" id="btn-log-save">
+          <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i>
+          <span>テキストで保存</span>
+        </button>
+        <button type="button" class="btn btn--quiet" id="btn-log-clear">
+          <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+          <span>消去</span>
+        </button>
+      </div>
+      <button type="button" class="btn btn--primary" data-close="1">
+        <i class="fa-solid fa-check" aria-hidden="true"></i>
+        <span>閉じる</span>
+      </button>
+    </footer>
+  </div>
+</div>
+
+<!-- ============================ 非対応環境の告知 ============================ -->
+<div class="modal" id="modal-unsupported" hidden>
+  <div class="modal__backdrop"></div>
+  <div class="modal__panel modal__panel--narrow" role="dialog" aria-modal="true" aria-labelledby="unsupported-title">
+    <header class="modal__head">
+      <h2 class="modal__title modal__title--danger" id="unsupported-title">
+        <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+        このブラウザでは動作しません
+      </h2>
+    </header>
+    <div class="modal__body">
+      <p class="help__p">
+        このツールは、ブラウザに標準で入っている圧縮・展開機能を使います。
+        お使いのブラウザには次の機能がありません。
+      </p>
+      <p class="code" id="unsupported-list"></p>
+      <p class="help__p">
+        Microsoft Edge または Google Chrome のバージョン 103 以降でお試しください。
+      </p>
+    </div>
+  </div>
+</div>
+
+<noscript>
+  <p style="padding:16px">このツールは JavaScript が有効な環境で動作します。</p>
+</noscript>
+
+<script src="log.js"></script>
+<script src="zip.js"></script>
+<script src="ole.js"></script>
+<script src="docx-title.js"></script>
+<script src="doc-title.js"></script>
+<script src="title-service.js"></script>
+<script src="naming.js"></script>
+<script src="saver.js"></script>
+<script src="samples-doc.js"></script>
+<script src="samples.js"></script>
+<script src="intake.js"></script>
+<script src="store.js"></script>
+<script src="ui.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
