@@ -39,19 +39,35 @@
     return readable + '（' + formatNumber(bytes) + ' バイト）';
   }
 
+  /**
+    * タイトルの表示。空文字と「要素そのものが無い」を分けて出す。
+    * 前者は取り除く対象、後者はもともと何もないという違いがあるため。
+    */
   function formatTitle(title) {
-    if (title === null || title === undefined) { return '（未設定）'; }
-    if (title === '') { return '（空）'; }
+    if (title === null || title === undefined) { return '（タイトルなし）'; }
+    if (title === '') { return '（空の項目が残っています）'; }
     return '「' + title + '」';
   }
 
   var BADGES = {
-    pending: { label: '読み取り中', icon: 'fa-solid fa-spinner fa-spin', modifier: 'pending' },
-    ready:   { label: '変換できます', icon: 'fa-regular fa-circle-check', modifier: 'ready' },
-    working: { label: '変換中', icon: 'fa-solid fa-spinner fa-spin', modifier: 'working' },
-    done:    { label: '変換済み', icon: 'fa-solid fa-circle-check', modifier: 'done' },
-    error:   { label: '変換できません', icon: 'fa-solid fa-triangle-exclamation', modifier: 'error' }
+    pending:   { label: '読み取り中', icon: 'fa-solid fa-spinner fa-spin', modifier: 'pending' },
+    ready:     { label: '処理できます', icon: 'fa-regular fa-circle-check', modifier: 'ready' },
+    working:   { label: '処理中', icon: 'fa-solid fa-spinner fa-spin', modifier: 'working' },
+    done:      { label: '処理済み', icon: 'fa-solid fa-circle-check', modifier: 'done' },
+    cleared:   { label: '空にしました', icon: 'fa-solid fa-circle-check', modifier: 'done' },
+    assigned:  { label: '設定しました', icon: 'fa-solid fa-circle-check', modifier: 'done' },
+    unchanged: { label: 'もともと空', icon: 'fa-solid fa-circle-minus', modifier: 'unchanged' },
+    error:     { label: '処理できません', icon: 'fa-solid fa-triangle-exclamation', modifier: 'error' }
   };
+
+  /** 行のバッジを決める。処理後は「何をしたか」を文字で示す。 */
+  function badgeFor(item) {
+    if (item.status !== STATUS.done || !item.report) {
+      return BADGES[item.status] || BADGES.pending;
+    }
+    if (!item.report.changed) { return BADGES.unchanged; }
+    return item.report.mode === 'clear' ? BADGES.cleared : BADGES.assigned;
+  }
 
   /* ---------------------------------------------------------------- *
    * ファイル一覧
@@ -104,7 +120,7 @@
     var report = item.report;
 
     if (item.status === STATUS.error) {
-      box.appendChild(el('p', 'facts__title', '変換できない理由'));
+      box.appendChild(el('p', 'facts__title', '処理できない理由'));
       var facts = el('div', 'facts');
       addFact(facts, '理由', item.error || '不明なエラー');
       addFact(facts, '判定方法', 'ZIP の中央ディレクトリと word/document.xml の有無を確認');
@@ -113,16 +129,21 @@
       return box;
     }
 
-    box.appendChild(el('p', 'facts__title', report ? '実際に書き換えた内容' : 'このファイルについて分かっていること'));
+    box.appendChild(el('p', 'facts__title', report ? '実際に行った処理' : 'このファイルについて分かっていること'));
     var list = el('div', 'facts');
 
     addFact(list, 'ファイルサイズ', report
       ? formatBytes(report.byteSizeBefore) + ' → ' + formatBytes(report.byteSizeAfter)
       : formatBytes(item.size));
-    addFact(list, '変換前のタイトル', formatTitle(report ? report.beforeTitle : item.currentTitle));
+    addFact(list, '処理前のタイトル', formatTitle(report ? report.beforeTitle : item.currentTitle));
 
-    if (report) {
-      addFact(list, '変換後のタイトル', formatTitle(report.afterTitle));
+    if (report && report.changed) {
+      addFact(list, '行った処理', report.mode === 'clear'
+        ? 'docProps/core.xml から <dc:title> を要素ごと取り除きました'
+        : 'docProps/core.xml の <dc:title> に指定した文字列を設定しました');
+      addFact(list, '処理後のタイトル', report.mode === 'clear'
+        ? '（空／要素そのものが存在しません）'
+        : formatTitle(report.afterTitle));
       addFact(list, '書き換えたパート',
         (report.changedParts.length ? report.changedParts.join(' / ') : 'なし') +
         (report.addedParts.length ? '　＋新規作成: ' + report.addedParts.join(' / ') : ''));
@@ -137,13 +158,21 @@
       if (item.savedName && item.savedName !== item.outputName) {
         addFact(list, '次に実行したときの名前', item.outputName, true);
       }
+    } else if (report) {
+      addFact(list, '行った処理', 'もともと <dc:title> が無いため、何も書き換えていません');
+      addFact(list, '出力したファイル', '元のファイルをそのまま出力（全 ' +
+        formatNumber(report.totalPartCount) + ' パートがバイト単位で同一）');
+      addFact(list, '保存したファイル名', item.savedName || item.outputName, true);
+      if (item.savedName && item.savedName !== item.outputName) {
+        addFact(list, '次に実行したときの名前', item.outputName, true);
+      }
     } else {
       addFact(list, 'コアプロパティ',
         item.hasCorePart === false
-          ? 'docProps/core.xml がありません（変換時に新規作成します）'
+          ? 'docProps/core.xml がありません'
           : 'docProps/core.xml あり');
       addFact(list, '予定の出力ファイル名', item.outputName, true);
-      addFact(list, '根拠の詳細', '変換すると、書き換えたパートと CRC-32 がここに出ます');
+      addFact(list, '根拠の詳細', '実行すると、書き換えたパートと CRC-32 がここに出ます');
     }
     box.appendChild(list);
     return box;
@@ -155,7 +184,7 @@
   }
 
   function updateRow(row, item) {
-    var badgeInfo = BADGES[item.status] || BADGES.pending;
+    var badgeInfo = badgeFor(item);
 
     row.classList.toggle('row--error', item.status === STATUS.error);
     row.querySelector('.row__icon i').className =
@@ -232,9 +261,9 @@
       text = 'まだファイルがありません';
     } else {
       text = '全 ' + formatNumber(counts.total) + ' 件　' +
-        '（変換できる ' + formatNumber(counts.convertible) + ' 件' +
-        (counts.error > 0 ? ' / 変換できない ' + formatNumber(counts.error) + ' 件' : '') +
-        (counts.done > 0 ? ' / 変換済み ' + formatNumber(counts.done) + ' 件' : '') + '）';
+        '（処理できる ' + formatNumber(counts.convertible) + ' 件' +
+        (counts.error > 0 ? ' / 処理できない ' + formatNumber(counts.error) + ' 件' : '') +
+        (counts.done > 0 ? ' / 処理済み ' + formatNumber(counts.done) + ' 件' : '') + '）';
     }
     $('filelist-counts').textContent = text;
 
@@ -308,14 +337,21 @@
 
   function renderSavePanel(settings) {
     var labels = { auto: '自動', each: '個別', zip: 'ZIP' };
+    var action = settings.titleMode === 'set' ? 'タイトルを設定して' : 'タイトルを空にして';
     $('save-state').textContent = labels[settings.saveMode] || '自動';
     $('zipname-field').hidden = settings.saveMode === 'each';
     $('dropzone-sub').textContent = settings.autoRunOnDrop
-      ? 'ドロップすると、そのまま変換して保存します'
+      ? 'ドロップすると、そのまま' + action + '保存します'
       : 'ドロップしたファイルは一覧に追加します（実行は下のボタン）';
   }
 
-  function renderTitlePanel(title) {
+  function renderTitlePanel(settings) {
+    var isSetMode = settings.titleMode === 'set';
+    $('title-set-fields').hidden = !isSetMode;
+    $('title-clear-note').hidden = isSetMode;
+    if (!isSetMode) { return; }
+
+    var title = settings.title;
     var trimmed = title.trim();
     $('title-counter').textContent = title.length + ' 文字';
     $('input-title').classList.toggle('is-missing', trimmed === '');

@@ -20,7 +20,10 @@
 
   var SAVE_MODE = { auto: 'auto', each: 'each', zip: 'zip' };
 
+  var TITLE_MODE = { clear: 'clear', set: 'set' };
+
   var DEFAULT_SETTINGS = {
+    titleMode: TITLE_MODE.clear,   /* このツールの主目的はタイトルを空にすること */
     nameMode: 'same',
     nameText: '_改',
     namePosition: 'suffix',
@@ -28,7 +31,7 @@
     serialDigits: 3,
     serialSeparator: '_',
     saveMode: SAVE_MODE.auto,
-    zipName: 'タイトル設定済み',
+    zipName: 'タイトル処理済み',
     autoRunOnDrop: true,
     showHelpOnStart: true
   };
@@ -99,6 +102,7 @@
         status: STATUS.pending,
         currentTitle: null,
         hasCorePart: null,
+        alreadyEmpty: null,
         outputName: file.name,
         savedName: null,
         error: null,
@@ -168,12 +172,17 @@
    * 集計（画面に件数を出すため、数えるのは必ずこちら側で行う）
    * ---------------------------------------------------------------- */
   Store.prototype.counts = function () {
-    var result = { total: this.items.length, convertible: 0, error: 0, done: 0, sample: 0, pending: 0 };
+    var result = {
+      total: this.items.length, convertible: 0, error: 0,
+      done: 0, sample: 0, pending: 0, needsClearing: 0
+    };
     for (var i = 0; i < this.items.length; i++) {
       var item = this.items[i];
       if (item.isSample) { result.sample++; }
       if (item.status === STATUS.error) { result.error++; continue; }
       result.convertible++;
+      /* dc:title 要素があるものは、中身が空でも取り除く対象になる */
+      if (item.currentTitle !== null) { result.needsClearing++; }
       if (item.status === STATUS.done) { result.done++; }
       if (item.status === STATUS.pending || item.status === STATUS.ready) { result.pending++; }
     }
@@ -186,6 +195,7 @@
 
   WTC.STATUS = STATUS;
   WTC.SAVE_MODE = SAVE_MODE;
+  WTC.TITLE_MODE = TITLE_MODE;
   WTC.DEFAULT_SETTINGS = DEFAULT_SETTINGS;
   WTC.Store = Store;
 }(window));

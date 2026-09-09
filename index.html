@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Word タイトル設定ツール</title>
+<title>Word タイトル クリーニング</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -16,8 +16,8 @@
     <div class="appbar__brand">
       <span class="appbar__mark" aria-hidden="true"><i class="fa-solid fa-file-word"></i></span>
       <div class="appbar__names">
-        <h1 class="appbar__title">Word タイトル設定ツール</h1>
-        <p class="appbar__subtitle">ドキュメントプロパティの「タイトル」だけを書き換えます</p>
+        <h1 class="appbar__title">Word タイトル クリーニング</h1>
+        <p class="appbar__subtitle">ドキュメントプロパティの「タイトル」だけを空にします</p>
       </div>
     </div>
     <div class="appbar__tools">
@@ -60,7 +60,7 @@
         <span class="dropzone__icon" aria-hidden="true"><i class="fa-solid fa-file-arrow-down"></i></span>
         <div class="dropzone__text">
           <p class="dropzone__lead">ここに Word ファイルをドロップ</p>
-          <p class="dropzone__sub" id="dropzone-sub">ドロップすると、そのまま変換して保存します</p>
+          <p class="dropzone__sub" id="dropzone-sub">ドロップすると、そのままタイトルを空にして保存します</p>
         </div>
         <div class="dropzone__actions">
           <button type="button" class="btn btn--ghost" id="btn-pick">
@@ -99,23 +99,48 @@
     <!-- 毎回使う設定なので、たたまずに常に出しておく -->
     <section class="panel panel--primary">
       <h2 class="panel__title">
-        <i class="fa-solid fa-tag" aria-hidden="true"></i>
-        <span>設定するタイトル</span>
+        <i class="fa-solid fa-eraser" aria-hidden="true"></i>
+        <span>タイトルの処理</span>
       </h2>
       <div class="panel__body">
-        <div class="field">
-          <div class="field__label field__label--split">
-            <label for="input-title">タイトル<span class="field__req">必須</span></label>
-            <span class="counter counter--inline" id="title-counter">0 文字</span>
+        <fieldset class="radios">
+          <legend class="sr-only">タイトルをどうするか</legend>
+          <label class="radio">
+            <input type="radio" name="title-mode" value="clear" checked>
+            <span class="radio__body">
+              <span class="radio__title">タイトルを空にする</span>
+              <span class="radio__desc">タイトルの文字を取り除きます</span>
+            </span>
+          </label>
+          <label class="radio">
+            <input type="radio" name="title-mode" value="set">
+            <span class="radio__body">
+              <span class="radio__title">タイトルを設定する</span>
+              <span class="radio__desc">全ファイルに同じタイトルを入れます</span>
+            </span>
+          </label>
+        </fieldset>
+
+        <p class="field__hint" id="title-clear-note">
+          <code>docProps/core.xml</code> の <code>&lt;dc:title&gt;</code> を要素ごと取り除きます。
+          もともとタイトルが無いファイルは、1 バイトも変更せずそのまま出力します。
+        </p>
+
+        <div class="subfields" id="title-set-fields" hidden>
+          <div class="field">
+            <div class="field__label field__label--split">
+              <label for="input-title">設定するタイトル<span class="field__req">必須</span></label>
+              <span class="counter counter--inline" id="title-counter">0 文字</span>
+            </div>
+            <input type="text" id="input-title" class="input input--lg" maxlength="255"
+                   placeholder="例: 令和六年度 業務改善提案書" autocomplete="off" spellcheck="false">
           </div>
-          <input type="text" id="input-title" class="input input--lg" maxlength="255"
-                 placeholder="例: 令和六年度 業務改善提案書" autocomplete="off" spellcheck="false">
-        </div>
-        <p class="field__hint" id="title-hint">一覧のすべてのファイルに、この同じタイトルを設定します。</p>
-        <div class="applied" id="title-applied" hidden>
-          <i class="fa-solid fa-arrow-right-long" aria-hidden="true"></i>
-          <span class="applied__label">反映される値</span>
-          <span class="applied__value" id="title-preview"></span>
+          <p class="field__hint" id="title-hint">一覧のすべてのファイルに、この同じタイトルを設定します。</p>
+          <div class="applied" id="title-applied" hidden>
+            <i class="fa-solid fa-arrow-right-long" aria-hidden="true"></i>
+            <span class="applied__label">反映される値</span>
+            <span class="applied__value" id="title-preview"></span>
+          </div>
         </div>
       </div>
     </section>
@@ -289,7 +314,7 @@
   <footer class="actionbar">
     <div class="actionbar__status" id="status" data-tone="neutral">
       <span class="actionbar__icon" aria-hidden="true"><i class="fa-regular fa-circle-question"></i></span>
-      <span class="actionbar__text" id="status-text">ファイルを入れて、タイトルを入力してください</span>
+      <span class="actionbar__text" id="status-text">Word ファイルを入れてください</span>
     </div>
     <div class="actionbar__progress" id="progress" hidden>
       <div class="bar"><div class="bar__fill" id="bar-fill"></div></div>
@@ -297,7 +322,7 @@
     </div>
     <button type="button" class="btn btn--primary btn--cta" id="btn-run" disabled>
       <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
-      <span id="btn-run-label">タイトルを設定して保存</span>
+      <span id="btn-run-label">タイトルを空にして保存</span>
     </button>
   </footer>
 </div>
@@ -332,30 +357,37 @@
       <section class="help">
         <h3 class="help__h">できること</h3>
         <p class="help__p">
-          Word ファイル（.docx / .docm / .dotx / .dotm）の<strong>ドキュメントプロパティ「タイトル」だけ</strong>を、
-          まとめて同じ文字列に書き換えます。
+          Word ファイル（.docx / .docm / .dotx / .dotm）の
+          <strong>ドキュメントプロパティ「タイトル」だけ</strong>を、まとめて空にします。
           Word でいう〈ファイル → 情報 → プロパティ → タイトル〉の欄です。
+          配布前にタイトルへ残った旧ファイル名や見出しを消したいとき、
+          ドロップするだけで一括処理できます。
+        </p>
+        <p class="help__p">
+          切り替えれば、逆に<strong>全ファイルへ同じタイトルを設定する</strong>こともできます。
         </p>
       </section>
 
       <section class="help">
-        <h3 class="help__h">使い方（3 ステップ）</h3>
+        <h3 class="help__h">使い方</h3>
         <ol class="steps">
           <li class="steps__item">
             <span class="steps__num">1</span>
             <div>
-              <p class="steps__title">タイトルを入力する</p>
-              <p class="steps__desc">画面右上の「設定するタイトル」に入れます。ここが空だと実行できません。</p>
+              <p class="steps__title">ファイルをドロップする</p>
+              <p class="steps__desc">
+                これだけで、タイトルを空にして保存まで進みます。
+                フォルダーごとのドロップにも対応します。
+              </p>
             </div>
           </li>
           <li class="steps__item">
             <span class="steps__num">2</span>
             <div>
-              <p class="steps__title">ファイルを入れる</p>
+              <p class="steps__title">中身を確かめたいときは「ファイルを選ぶ」</p>
               <p class="steps__desc">
-                <strong>ドロップ</strong>すると、そのまま変換して保存まで進みます。
-                <strong>「ファイルを選ぶ」</strong>は一覧に追加するだけで、実行ボタンを押すまで何もしません。
-                フォルダーのドロップ、Ctrl+V での貼り付けもできます。
+                こちらは一覧に追加するだけで、実行ボタンを押すまで何もしません。
+                現在のタイトルを一覧で確認してから実行できます。Ctrl+V での貼り付けも同じ動きです。
               </p>
             </div>
           </li>
@@ -370,6 +402,15 @@
       </section>
 
       <section class="help">
+        <h3 class="help__h">「空にする」の中身</h3>
+        <ul class="help__ul">
+          <li><code>docProps/core.xml</code> の <code>&lt;dc:title&gt;</code> を<strong>要素ごと取り除きます</strong>。タイトルの文字はファイルのどこにも残りません。</li>
+          <li>もともとタイトルが無いファイルは、<strong>1 バイトも変更せず</strong>元のファイルをそのまま出力します。落としたファイルの数と保存されるファイルの数は必ず一致します。</li>
+          <li>タイトル以外のプロパティ（作成者・会社名・キーワードなど）は消えません。消したい場合は Word の〈ドキュメント検査〉をお使いください。</li>
+        </ul>
+      </section>
+
+      <section class="help">
         <h3 class="help__h">保存のされ方</h3>
         <ul class="help__ul">
           <li>1 件なら、そのファイル 1 つがダウンロードされます。</li>
@@ -381,7 +422,7 @@
       <section class="help">
         <h3 class="help__h">変更されないもの</h3>
         <p class="help__p">
-          書き換えるのは <code>docProps/core.xml</code> の <code>&lt;dc:title&gt;</code> だけです。
+          書き換えるのは <code>docProps/core.xml</code> だけです。
           本文・書式・作成者・作成日時・更新日時・その他のプロパティには一切触れません。
           タイトル以外のパートは<strong>圧縮されたままのバイト列をそのまま複製</strong>するので、内容が変化しません。
           一覧の各行にある「根拠」ボタンから、実際に何を書き換えたかを確認できます。
@@ -391,7 +432,7 @@
       <section class="help">
         <h3 class="help__h">できないこと</h3>
         <ul class="help__ul">
-          <li>旧形式の <code>.doc</code>、パスワード保護されたファイルは変換できません。</li>
+          <li>旧形式の <code>.doc</code>、パスワード保護されたファイルは処理できません。</li>
           <li>ZIP64 形式（極端に大きいファイル）、暗号化された ZIP は読み取れません。</li>
           <li>元のファイルを直接書き換えることはできません。必ず新しいファイルとして保存されます。</li>
         </ul>
@@ -401,7 +442,8 @@
         <h3 class="help__h">動作環境</h3>
         <p class="help__p">
           Microsoft Edge / Google Chrome（バージョン 103 以降）で、この HTML をそのまま開いて使えます。
-          サーバーも追加のインストールも不要です。アイコンの表示にだけインターネット接続を使います。
+          サーバーも追加のインストールも不要です。ファイルはこのパソコンの中だけで処理され、どこにも送信されません。
+          アイコンの表示にだけインターネット接続を使います。
         </p>
       </section>
     </div>
@@ -450,6 +492,7 @@
 <script src="docx-title.js"></script>
 <script src="naming.js"></script>
 <script src="samples.js"></script>
+<script src="intake.js"></script>
 <script src="store.js"></script>
 <script src="ui.js"></script>
 <script src="app.js"></script>

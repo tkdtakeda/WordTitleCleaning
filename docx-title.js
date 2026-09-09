@@ -2,12 +2,18 @@
  * docx-title.js - Word Title Tool
  * OOXML(.docx/.docm/.dotx/.dotm) の docProps/core.xml にある
  * <dc:title> "だけ" を読み書きする層。UI には依存しない。
+ *
+ * 2 つの処理をもつ。
+ *   clear … <dc:title> を取り除いて、タイトルを空にする（このツールの主目的）
+ *   set   … <dc:title> に指定した文字列を入れる
  */
 (function (global) {
   'use strict';
 
   var WTC = global.WTC = global.WTC || {};
   var Zip = WTC.Zip;
+
+  var MODE = { clear: 'clear', set: 'set' };
 
   var PART = {
     contentTypes: '[Content_Types].xml',
@@ -26,6 +32,7 @@
     relationships: 'http://schemas.openxmlformats.org/package/2006/relationships'
   };
 
+  var DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   var CORE_CONTENT_TYPE = 'application/vnd.openxmlformats-package.core-properties+xml';
   var CORE_REL_TYPE = 'http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties';
   var XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n';
@@ -87,6 +94,11 @@
     return false;
   }
 
+  /** タイトルが実質的に空か（要素が無い、または中身が空）。 */
+  function isEmptyTitle(title) {
+    return title === null || title === undefined || title === '';
+  }
+
   /* ------------------------------------------------------------------ *
    * core.xml の操作
    * ------------------------------------------------------------------ */
@@ -115,6 +127,20 @@
       root.insertBefore(element, root.firstChild);
     }
     element.appendChild(doc.createTextNode(title));
+    return serializeXml(doc);
+  }
+
+  /**
+   * dc:title を取り除いた core.xml 文字列を返す。
+   * 要素がもともと無ければ null（＝書き換え不要）。
+   */
+  function removeTitleFromCoreXml(text) {
+    var doc = parseXml(text, PART.core);
+    var found = doc.documentElement.getElementsByTagNameNS(NS.dc, 'title');
+    if (found.length === 0) { return null; }
+    for (var i = found.length - 1; i >= 0; i--) {
+      found[i].parentNode.removeChild(found[i]);
+    }
     return serializeXml(doc);
   }
 
@@ -153,10 +179,6 @@
     return serializeXml(doc);
   }
 
-  /* ------------------------------------------------------------------ *
-   * 公開 API
-   * ------------------------------------------------------------------ */
-
   /** 既存パートを書き換える（patcher が null を返したら変更なし）。 */
   function patchPart(entries, partName, patcher, changedParts) {
     var index = findEntry(entries, partName);
@@ -177,9 +199,23 @@
     });
   }
 
-  /**
-   * ファイルを解析して現在のタイトルなどを返す（書き換えはしない）。
-   */
+  /** core.xml を新しい内容で差し替え、CRC の変化を返す。 */
+  function replaceCorePart(entries, coreIndex, xmlText, changedParts) {
+    var before = entries[coreIndex];
+    return Zip.createEntry(PART.core, encodeUtf8(xmlText), {}).then(function (entry) {
+      entry.date = before.date;
+      entry.time = before.time;
+      entries[coreIndex] = entry;
+      changedParts.push(PART.core);
+      return { crcBefore: before.crc, crcAfter: entry.crc };
+    });
+  }
+
+  /* ------------------------------------------------------------------ *
+   * 公開 API
+   * ------------------------------------------------------------------ */
+
+  /** ファイルを解析して現在のタイトルなどを返す（書き換えはしない）。 */
   function inspect(file) {
     if (!hasSupportedExtension(file.name)) {
       return Promise.reject(new Error('対応していない拡張子です（対応: ' + SUPPORTED_EXTENSIONS.join(' / ') + '）'));
@@ -208,74 +244,136 @@
     });
   }
 
+  function buildReport(info, extra) {
+    var report = {
+      mode: MODE.clear,
+      changed: false,
+      titleExisted: info.currentTitle !== null,
+      beforeTitle: info.currentTitle,
+      afterTitle: null,
+      createdCorePart: false,
+      changedParts: [],
+      addedParts: [],
+      copiedPartCount: info.entries.length,
+      totalPartCount: info.entries.length,
+      coreCrcBefore: null,
+      coreCrcAfter: null,
+      byteSizeBefore: info.byteSize,
+      byteSizeAfter: info.byteSize,
+      encoding: 'UTF-8'
+    };
+    return Object.assign(report, extra || {});
+  }
+
+  /** 出来上がった entries から Blob を作る。 */
+  function packageBlob(entries) {
+    var bytes = Zip.build(entries);
+    return { blob: new Blob([bytes], { type: DOCX_MIME }), length: bytes.length };
+  }
+
   /**
-   * タイトルを設定した新しいファイルの Blob と、根拠レポートを返す。
-   * docProps/core.xml 以外のパートは圧縮済みバイト列のまま複製する。
+   * タイトルを空にする（<dc:title> を取り除く）。
+   * もともと要素が無いファイルは 1 バイトも触らず、元のファイルをそのまま返す。
    */
-  function applyTitle(file, rawTitle) {
-    var title = sanitizeTitle(rawTitle);
-    return inspect(file).then(function (info) {
-      var entries = info.entries.slice();
-      var changedParts = [];
-      var addedParts = [];
-      var work;
-
-      if (info.coreIndex >= 0) {
-        work = Zip.readEntryBytes(entries[info.coreIndex]).then(function (bytes) {
-          var before = entries[info.coreIndex];
-          var updated = writeTitleToCoreXml(decodeUtf8(bytes), title);
-          return Zip.createEntry(PART.core, encodeUtf8(updated), {}).then(function (entry) {
-            entry.date = before.date;
-            entry.time = before.time;
-            entries[info.coreIndex] = entry;
-            changedParts.push(PART.core);
-            return { crcBefore: before.crc, crcAfter: entry.crc };
-          });
-        });
-      } else {
-        work = Zip.createEntry(PART.core, encodeUtf8(writeTitleToCoreXml(EMPTY_CORE_XML, title)), {})
-          .then(function (entry) {
-            entries.push(entry);
-            addedParts.push(PART.core);
-            return patchPart(entries, PART.contentTypes, ensureCoreContentType, changedParts)
-              .then(function () {
-                return patchPart(entries, PART.rootRels, ensureCoreRelationship, changedParts);
-              })
-              .then(function () { return { crcBefore: null, crcAfter: entry.crc }; });
-          });
-      }
-
-      return work.then(function (crc) {
-        var bytes = Zip.build(entries);
-        var blob = new Blob([bytes], {
-          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        });
-        return {
-          blob: blob,
-          report: {
-            beforeTitle: info.currentTitle,
-            afterTitle: title,
-            createdCorePart: info.coreIndex < 0,
-            changedParts: changedParts,
-            addedParts: addedParts,
-            copiedPartCount: entries.length - changedParts.length - addedParts.length,
-            totalPartCount: entries.length,
-            coreCrcBefore: crc.crcBefore,
-            coreCrcAfter: crc.crcAfter,
-            byteSizeBefore: info.byteSize,
-            byteSizeAfter: bytes.length,
-            encoding: 'UTF-8'
-          }
-        };
+  function applyClear(file, info) {
+    if (info.currentTitle === null) {
+      return Promise.resolve({
+        blob: file.slice(0, file.size, DOCX_MIME),
+        report: buildReport(info, { mode: MODE.clear, changed: false })
       });
+    }
+
+    var entries = info.entries.slice();
+    var changedParts = [];
+    return Zip.readEntryBytes(entries[info.coreIndex]).then(function (bytes) {
+      var updated = removeTitleFromCoreXml(decodeUtf8(bytes));
+      return replaceCorePart(entries, info.coreIndex, updated, changedParts);
+    }).then(function (crc) {
+      var packed = packageBlob(entries);
+      return {
+        blob: packed.blob,
+        report: buildReport(info, {
+          mode: MODE.clear,
+          changed: true,
+          changedParts: changedParts,
+          copiedPartCount: entries.length - changedParts.length,
+          coreCrcBefore: crc.crcBefore,
+          coreCrcAfter: crc.crcAfter,
+          byteSizeAfter: packed.length
+        })
+      };
+    });
+  }
+
+  /** タイトルに文字列を設定する。core.xml が無ければ作る。 */
+  function applySet(file, info, title) {
+    var entries = info.entries.slice();
+    var changedParts = [];
+    var addedParts = [];
+    var work;
+
+    if (info.coreIndex >= 0) {
+      work = Zip.readEntryBytes(entries[info.coreIndex]).then(function (bytes) {
+        var updated = writeTitleToCoreXml(decodeUtf8(bytes), title);
+        return replaceCorePart(entries, info.coreIndex, updated, changedParts);
+      });
+    } else {
+      work = Zip.createEntry(PART.core, encodeUtf8(writeTitleToCoreXml(EMPTY_CORE_XML, title)), {})
+        .then(function (entry) {
+          entries.push(entry);
+          addedParts.push(PART.core);
+          return patchPart(entries, PART.contentTypes, ensureCoreContentType, changedParts)
+            .then(function () {
+              return patchPart(entries, PART.rootRels, ensureCoreRelationship, changedParts);
+            })
+            .then(function () { return { crcBefore: null, crcAfter: entry.crc }; });
+        });
+    }
+
+    return work.then(function (crc) {
+      var packed = packageBlob(entries);
+      return {
+        blob: packed.blob,
+        report: buildReport(info, {
+          mode: MODE.set,
+          changed: true,
+          afterTitle: title,
+          createdCorePart: info.coreIndex < 0,
+          changedParts: changedParts,
+          addedParts: addedParts,
+          copiedPartCount: entries.length - changedParts.length - addedParts.length,
+          totalPartCount: entries.length,
+          coreCrcBefore: crc.crcBefore,
+          coreCrcAfter: crc.crcAfter,
+          byteSizeAfter: packed.length
+        })
+      };
+    });
+  }
+
+  /**
+   * 新しいファイルの Blob と、根拠レポートを返す。
+   * docProps/core.xml 以外のパートは圧縮済みバイト列のまま複製する。
+   * @param {File}   file
+   * @param {object} options { mode: 'clear' | 'set', title: string }
+   */
+  function apply(file, options) {
+    options = options || {};
+    var mode = options.mode === MODE.set ? MODE.set : MODE.clear;
+    var title = sanitizeTitle(options.title);
+
+    return inspect(file).then(function (info) {
+      return mode === MODE.set ? applySet(file, info, title) : applyClear(file, info);
     });
   }
 
   WTC.DocxTitle = {
+    MODE: MODE,
     SUPPORTED_EXTENSIONS: SUPPORTED_EXTENSIONS,
     hasSupportedExtension: hasSupportedExtension,
     sanitizeTitle: sanitizeTitle,
+    isEmptyTitle: isEmptyTitle,
     inspect: inspect,
-    applyTitle: applyTitle
+    apply: apply
   };
 }(window));

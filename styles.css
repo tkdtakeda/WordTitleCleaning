@@ -103,6 +103,7 @@
   --w-modal-narrow: 460px;
   --size-menu-icon: 16px;
   --size-row-icon: 30px;
+  --w-badge: 126px;
 
   /* --- 高さ --- */
   --h-control: 32px;
@@ -403,7 +404,8 @@ code {
 .rows { display: block; }
 .row {
   display: grid;
-  grid-template-columns: var(--size-row-icon) minmax(0, 1fr) minmax(0, 0.9fr) auto auto;
+  /* バッジ列は幅を固定して、行ごとに列がずれないようにする */
+  grid-template-columns: var(--size-row-icon) minmax(0, 1fr) minmax(0, 0.9fr) var(--w-badge) auto;
   align-items: center; gap: var(--sp-4);
   padding: var(--sp-3) var(--sp-5);
   border-bottom: var(--bw-1) solid var(--c-line-soft);
@@ -437,7 +439,7 @@ code {
   border: var(--bw-1) solid var(--c-line);
   border-radius: var(--r-2);
 }
-.row__badge { flex: none; }
+.row__badge { flex: none; justify-self: start; }
 
 .tag { display: inline-block; font-size: var(--fs-xs); padding: 0 var(--sp-2);
        border-radius: var(--r-1); background: var(--c-brand-100); color: var(--c-brand-800);
@@ -454,6 +456,7 @@ code {
 .badge--ready   { background: var(--c-brand-100); color: var(--c-brand-800); border-color: var(--c-brand-300); }
 .badge--working { background: var(--c-brand-100); color: var(--c-brand-800); border-color: var(--c-brand-300); }
 .badge--done    { background: var(--c-ok-100); color: var(--c-ok-700); border-color: var(--c-ok-600); }
+.badge--unchanged { background: var(--c-surface-3); color: var(--c-ink-700); border-color: var(--c-line-strong); }
 .badge--error   { background: var(--c-danger-100); color: var(--c-danger-700); border-color: var(--c-danger-600); }
 
 .facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--sp-2) var(--sp-5); }

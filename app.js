@@ -92,15 +92,24 @@
       : (count > 1 ? count + ' 件を 1 つずつ保存します' : '1 件を保存します');
   }
 
+  function isSetMode() {
+    return store.settings.titleMode === WTC.TITLE_MODE.set;
+  }
+
+  /** ボタンの動詞。状態によってラベルだけを変え、位置は動かさない。 */
+  function actionVerb() {
+    return isSetMode() ? 'タイトルを設定して保存' : 'タイトルを空にして保存';
+  }
+
   function evaluateRun() {
     var counts = store.counts();
     var title = store.settings.title.trim();
-    var defaultLabel = 'タイトルを設定して保存';
+    var verb = actionVerb();
 
     if (store.processing) {
       return {
         canRun: false, tone: 'info', progress: store.progress,
-        message: 'タイトルを書き換えています',
+        message: isSetMode() ? 'タイトルを書き換えています' : 'タイトルを取り除いています',
         buttonLabel: '処理中…'
       };
     }
@@ -109,36 +118,51 @@
       return {
         canRun: false, tone: 'info',
         message: reading + ' 件を読み取っています。少しお待ちください',
-        buttonLabel: defaultLabel
+        buttonLabel: verb
       };
     }
     if (counts.total === 0) {
       return {
         canRun: false, tone: 'neutral',
         message: 'ファイルがありません。ドロップするか「ファイルを選ぶ」で追加してください',
-        buttonLabel: defaultLabel
+        buttonLabel: verb
       };
     }
-    if (title === '') {
+    if (isSetMode() && title === '') {
       return {
         canRun: false, tone: 'warn',
         message: 'タイトルが未入力です。右の「設定するタイトル」に入れてください',
-        buttonLabel: defaultLabel
+        buttonLabel: verb
       };
     }
     if (counts.convertible === 0) {
       return {
         canRun: false, tone: 'error',
-        message: '全 ' + counts.error + ' 件が読み取れないファイルです。各行の目のアイコンで理由を確認できます',
-        buttonLabel: defaultLabel
+        message: '全 ' + counts.error + ' 件が読み取れないファイルです。各行の「根拠」ボタンで理由を確認できます',
+        buttonLabel: verb
       };
     }
+
+    var leftover = counts.error > 0 ? '（読み取れない ' + counts.error + ' 件は対象外）' : '';
+    if (isSetMode()) {
+      return {
+        canRun: true,
+        tone: counts.error > 0 ? 'warn' : 'info',
+        message: counts.convertible + ' 件に「' + title + '」を設定します。' +
+          describeSave(counts.convertible) + leftover,
+        buttonLabel: counts.convertible + ' 件の' + verb
+      };
+    }
+    var untouched = counts.convertible - counts.needsClearing;
     return {
       canRun: true,
       tone: counts.error > 0 ? 'warn' : 'info',
-      message: counts.convertible + ' 件に「' + title + '」を設定します。' + describeSave(counts.convertible) +
-        (counts.error > 0 ? '（読み取れない ' + counts.error + ' 件は対象外）' : ''),
-      buttonLabel: counts.convertible + ' 件のタイトルを設定して保存'
+      message: counts.needsClearing === 0
+        ? counts.convertible + ' 件はもともとタイトルがありません。実行してもファイルは変わりません' + leftover
+        : counts.convertible + ' 件中 ' + counts.needsClearing + ' 件を空にします' +
+          (untouched > 0 ? '（' + untouched + ' 件はもともとタイトルが無く無変更）' : '') + '。' +
+          describeSave(counts.convertible) + leftover,
+      buttonLabel: counts.convertible + ' 件の' + verb
     };
   }
 
@@ -149,7 +173,7 @@
     recomputeOutputNames();
     UI.renderList(store, rowCache);
     UI.renderCounts(store.counts());
-    UI.renderTitlePanel(store.settings.title);
+    UI.renderTitlePanel(store.settings);
     UI.renderNamingPanel(store.settings, previewNames());
     UI.renderSavePanel(store.settings);
     $('zipname-hint').textContent = '保存名: ' + zipFileName();
@@ -167,7 +191,8 @@
           store.patchItem(item.id, {
             status: STATUS.ready,
             currentTitle: info.currentTitle,
-            hasCorePart: info.hasCorePart
+            hasCorePart: info.hasCorePart,
+            alreadyEmpty: DocxTitle.isEmptyTitle(info.currentTitle)
           });
         }, function (error) {
           store.patchItem(item.id, { status: STATUS.error, error: messageOf(error) });
@@ -180,73 +205,6 @@
     if (files.length === 0) { return Promise.resolve([]); }
     var added = store.addFiles(files, options);
     return inspectItems(added).then(function () { return added; });
-  }
-
-  /** ドロップされた項目を再帰的にたどって File を集める。 */
-  function walkEntry(entry, fromFolder) {
-    if (entry.isFile) {
-      return new Promise(function (resolve) {
-        entry.file(
-          function (file) { resolve([{ file: file, fromFolder: fromFolder }]); },
-          function () { resolve([]); }
-        );
-      });
-    }
-    var reader = entry.createReader();
-    var children = [];
-    return new Promise(function (resolve) {
-      var readBatch = function () {
-        reader.readEntries(function (batch) {
-          if (batch.length === 0) {
-            Promise.all(children.map(function (child) { return walkEntry(child, true); }))
-              .then(function (lists) {
-                resolve(lists.reduce(function (all, list) { return all.concat(list); }, []));
-              });
-            return;
-          }
-          children = children.concat(Array.prototype.slice.call(batch));
-          readBatch();
-        }, function () { resolve([]); });
-      };
-      readBatch();
-    });
-  }
-
-  function collectDropped(dataTransfer) {
-    var plain = Array.prototype.slice.call(dataTransfer.files || []).map(function (file) {
-      return { file: file, fromFolder: false };
-    });
-    var items = dataTransfer.items;
-    if (!items || items.length === 0 || typeof items[0].webkitGetAsEntry !== 'function') {
-      return Promise.resolve(plain);
-    }
-    var entries = [];
-    for (var i = 0; i < items.length; i++) {
-      var entry = items[i].webkitGetAsEntry();
-      if (entry) { entries.push(entry); }
-    }
-    if (entries.length === 0) { return Promise.resolve(plain); }
-    return Promise.all(entries.map(function (entry) { return walkEntry(entry, false); }))
-      .then(function (lists) {
-        return lists.reduce(function (all, list) { return all.concat(list); }, []);
-      });
-  }
-
-  /**
-   * フォルダーの中の Word 以外は黙って除く。
-   * 直接ドロップされたものは、理由が見えるように一覧へ入れる。
-   */
-  function sortOutFiles(picked) {
-    var accepted = [];
-    var skipped = 0;
-    picked.forEach(function (entry) {
-      if (DocxTitle.hasSupportedExtension(entry.file.name) || !entry.fromFolder) {
-        accepted.push(entry.file);
-      } else {
-        skipped++;
-      }
-    });
-    return { accepted: accepted, skipped: skipped };
   }
 
   /* ================================================================ *
@@ -287,9 +245,10 @@
   }
 
   function run(items) {
-    var title = store.settings.title.trim();
+    var options = { mode: store.settings.titleMode, title: store.settings.title.trim() };
     var targets = items.filter(function (item) { return item.status !== STATUS.error; });
-    if (targets.length === 0 || title === '') { return Promise.resolve(); }
+    if (targets.length === 0) { return Promise.resolve(); }
+    if (options.mode === WTC.TITLE_MODE.set && options.title === '') { return Promise.resolve(); }
 
     recomputeOutputNames();
     var plan = targets.map(function (item) { return { item: item, name: item.outputName }; });
@@ -300,18 +259,21 @@
 
     var results = [];
     var failed = 0;
+    var unchanged = 0;
 
     return plan.reduce(function (chain, step, index) {
       return chain.then(function () {
         store.patchItem(step.item.id, { status: STATUS.working }, true);
         refresh();
-        return DocxTitle.applyTitle(step.item.file, title).then(function (output) {
+        return DocxTitle.apply(step.item.file, options).then(function (output) {
+          if (!output.report.changed) { unchanged++; }
           store.patchItem(step.item.id, {
             status: STATUS.done,
             report: output.report,
             resultBlob: output.blob,
             savedName: step.name,
-            currentTitle: output.report.afterTitle
+            currentTitle: output.report.afterTitle,
+            alreadyEmpty: DocxTitle.isEmptyTitle(output.report.afterTitle)
           }, true);
           results.push({ name: step.name, blob: output.blob });
         }, function (error) {
@@ -327,7 +289,7 @@
     }).then(function (saved) {
       store.processing = false;
       refresh();
-      reportResult(saved, results.length, failed);
+      reportResult(saved, results.length, failed, unchanged);
     }, function (error) {
       store.processing = false;
       refresh();
@@ -335,16 +297,19 @@
     });
   }
 
-  function reportResult(saved, successCount, failedCount) {
+  function reportResult(saved, successCount, failedCount, unchangedCount) {
     if (successCount === 0) {
-      UI.showToast({ tone: 'error', message: '変換できたファイルがありませんでした', duration: 10000 });
+      UI.showToast({ tone: 'error', message: '処理できたファイルがありませんでした', duration: 10000 });
       return;
     }
     var message = saved.kind === 'zip'
       ? successCount + ' 件を「' + saved.name + '」にまとめて保存しました'
       : successCount + ' 件を保存しました';
+    if (unchangedCount > 0) {
+      message += '（うち ' + unchangedCount + ' 件はもともとタイトルが無く、無変更で出力）';
+    }
     if (failedCount > 0) { message += '（' + failedCount + ' 件は失敗。一覧の理由を確認してください）'; }
-    UI.showToast({ tone: failedCount > 0 ? 'warn' : 'ok', message: message, duration: 10000 });
+    UI.showToast({ tone: failedCount > 0 ? 'warn' : 'ok', message: message, duration: 11000 });
   }
 
   /* ================================================================ *
@@ -526,6 +491,16 @@
       store.updateSettings({ zipName: zipNameInput.value });
     });
 
+    var titleModeRadios = document.querySelectorAll('input[name="title-mode"]');
+    Array.prototype.forEach.call(titleModeRadios, function (radio) {
+      radio.addEventListener('change', function () {
+        if (!radio.checked) { return; }
+        store.updateSettings({ titleMode: radio.value });
+        if (radio.value === WTC.TITLE_MODE.set) { titleInput.focus(); }
+      });
+    });
+    setRadio('title-mode', settings.titleMode);
+
     setRadio('name-mode', settings.nameMode);
     setRadio('name-position', settings.namePosition);
     setRadio('save-mode', settings.saveMode);
@@ -548,87 +523,56 @@
     if (settings.nameMode !== 'same') { $('panel-naming').open = true; }
   }
 
-  function bindFileIntake() {
-    var fileInput = $('file-input');
-    $('btn-pick').addEventListener('click', function () { fileInput.click(); });
-    fileInput.addEventListener('change', function () {
-      var files = Array.prototype.slice.call(fileInput.files);
-      fileInput.value = '';
-      intake(files, {}).then(function (added) {
-        if (added.length > 0) {
-          UI.showToast({ tone: 'ok', message: added.length + ' 件を一覧に追加しました。下のボタンで実行します', duration: 7000 });
-        }
+  /**
+   * 取り込み口はここ 1 つ。どこから入ってきたかは meta.source で分ける。
+   * ドロップだけは、設定が揃っていればそのまま保存まで進める。
+   */
+  function handleIncoming(files, meta) {
+    if (meta.skipped > 0) {
+      UI.showToast({
+        tone: 'warn',
+        message: 'フォルダー内の Word 以外 ' + meta.skipped + ' 件は読み込みませんでした',
+        duration: 8000
       });
-    });
+    }
+    if (files.length === 0) {
+      if (meta.source === WTC.Intake.SOURCE.drop) {
+        UI.showToast({ tone: 'warn', message: '読み込めるファイルがありませんでした', duration: 8000 });
+      }
+      return Promise.resolve([]);
+    }
 
-    var depth = 0;
-    var veil = $('dropveil');
-    var showVeil = function () {
-      $('dropveil-sub').textContent = store.settings.autoRunOnDrop
-        ? 'そのまま変換して保存します' : '一覧に追加します';
-      veil.hidden = false;
-    };
-    var hideVeil = function () { depth = 0; veil.hidden = true; };
+    return intake(files, {}).then(function (added) {
+      if (added.length === 0) { return added; }
 
-    global.addEventListener('dragenter', function (event) {
-      event.preventDefault();
-      depth++;
-      showVeil();
-    });
-    global.addEventListener('dragover', function (event) { event.preventDefault(); });
-    global.addEventListener('dragleave', function (event) {
-      event.preventDefault();
-      depth = Math.max(0, depth - 1);
-      if (depth === 0) { hideVeil(); }
-    });
-    global.addEventListener('drop', function (event) {
-      event.preventDefault();
-      hideVeil();
-      handleDrop(event.dataTransfer);
-    });
-
-    document.addEventListener('paste', function (event) {
-      var tag = (event.target && event.target.tagName) || '';
-      if (tag === 'INPUT' || tag === 'TEXTAREA') { return; }
-      var files = Array.prototype.slice.call((event.clipboardData && event.clipboardData.files) || []);
-      if (files.length === 0) { return; }
-      event.preventDefault();
-      intake(files, {}).then(function (added) {
-        UI.showToast({ tone: 'ok', message: '貼り付けた ' + added.length + ' 件を一覧に追加しました', duration: 7000 });
-      });
+      if (meta.source !== WTC.Intake.SOURCE.drop || !store.settings.autoRunOnDrop) {
+        UI.showToast({
+          tone: 'ok',
+          message: added.length + ' 件を一覧に追加しました。下のボタンで実行します',
+          duration: 7000
+        });
+        return added;
+      }
+      if (isSetMode() && store.settings.title.trim() === '') {
+        UI.showToast({
+          tone: 'warn',
+          message: 'タイトルが未入力のため、' + added.length + ' 件を一覧に追加して待機しています',
+          duration: 10000
+        });
+        $('input-title').focus();
+        return added;
+      }
+      return run(added).then(function () { return added; });
     });
   }
 
-  function handleDrop(dataTransfer) {
-    collectDropped(dataTransfer).then(function (picked) {
-      var sorted = sortOutFiles(picked);
-      if (sorted.skipped > 0) {
-        UI.showToast({
-          tone: 'warn',
-          message: 'フォルダー内の Word 以外 ' + sorted.skipped + ' 件は読み込みませんでした',
-          duration: 8000
-        });
+  function bindFileIntake() {
+    WTC.Intake.bind({
+      onFiles: handleIncoming,
+      veilText: function () {
+        if (!store.settings.autoRunOnDrop) { return '一覧に追加します'; }
+        return isSetMode() ? 'タイトルを設定して保存します' : 'タイトルを空にして保存します';
       }
-      if (sorted.accepted.length === 0) {
-        UI.showToast({ tone: 'warn', message: '読み込めるファイルがありませんでした', duration: 8000 });
-        return;
-      }
-      return intake(sorted.accepted, {}).then(function (added) {
-        if (!store.settings.autoRunOnDrop) {
-          UI.showToast({ tone: 'ok', message: added.length + ' 件を一覧に追加しました', duration: 7000 });
-          return;
-        }
-        if (store.settings.title.trim() === '') {
-          UI.showToast({
-            tone: 'warn',
-            message: 'タイトルが未入力のため、' + added.length + ' 件を一覧に追加して待機しています',
-            duration: 10000
-          });
-          $('input-title').focus();
-          return;
-        }
-        return run(added);
-      });
     });
   }
 
@@ -686,6 +630,15 @@
     });
   }
 
+  /** 次にすることへフォーカスを置く。 */
+  function focusFirstStep() {
+    if (isSetMode() && store.settings.title.trim() === '') {
+      $('input-title').focus();
+    } else {
+      $('btn-pick').focus();
+    }
+  }
+
   function bindModals() {
     var open = function () {
       $('check-help-start').checked = store.settings.showHelpOnStart;
@@ -693,7 +646,7 @@
     };
     var close = function () {
       UI.closeModal('modal-help');
-      $('input-title').focus();
+      focusFirstStep();
     };
     $('btn-help').addEventListener('click', open);
     $('modal-help').addEventListener('click', function (event) {
@@ -758,7 +711,7 @@
       $('check-help-start').checked = true;
       UI.openModal('modal-help');
     } else {
-      $('input-title').focus();
+      focusFirstStep();
     }
   }
 

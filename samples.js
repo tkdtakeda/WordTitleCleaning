@@ -64,6 +64,7 @@
       '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>';
   }
 
+  /** title が null なら dc:title 要素そのものを作らない。'' なら空の要素を作る。 */
   function coreXml(options) {
     var titleElement = options.title === null
       ? ''
@@ -116,75 +117,88 @@
   var CATALOG = [
     {
       id: 'with-title',
-      fileName: 'サンプル1_タイトル設定済み.docx',
-      label: 'タイトルが既に入っている文書',
-      note: 'dc:title に「旧タイトル（差し替え前）」が入っています。上書きされることを確認できます。',
+      fileName: 'サンプル1_タイトルあり.docx',
+      label: 'タイトルが入っている文書',
+      note: 'dc:title に「社外秘_第一次案（差し替え前）」が入っています。空にする動作を確認できます。',
       build: function () {
-        return buildDocx('サンプル1_タイトル設定済み.docx', {
+        return buildDocx('サンプル1_タイトルあり.docx', {
           corePart: true,
-          title: '旧タイトル（差し替え前）',
-          paragraphs: ['サンプル1: タイトルが設定済みの文書です。']
+          title: '社外秘_第一次案（差し替え前）',
+          paragraphs: ['サンプル1: タイトルが設定されている文書です。']
+        });
+      }
+    },
+    {
+      id: 'empty-title',
+      fileName: 'サンプル2_タイトルが空文字.docx',
+      label: 'タイトルが空文字の文書',
+      note: 'dc:title はあるが中身が空。要素ごと取り除かれることを確認できます。',
+      build: function () {
+        return buildDocx('サンプル2_タイトルが空文字.docx', {
+          corePart: true,
+          title: '',
+          paragraphs: ['サンプル2: タイトル要素が空文字の文書です。']
         });
       }
     },
     {
       id: 'without-title',
-      fileName: 'サンプル2_タイトル要素なし.docx',
+      fileName: 'サンプル3_タイトル要素なし.docx',
       label: 'タイトル要素が無い文書',
-      note: 'core.xml はあるが dc:title が無い状態。新しく要素が追加されることを確認できます。',
+      note: 'core.xml はあるが dc:title が無い状態。既に空なので変更されないことを確認できます。',
       build: function () {
-        return buildDocx('サンプル2_タイトル要素なし.docx', {
+        return buildDocx('サンプル3_タイトル要素なし.docx', {
           corePart: true,
           title: null,
-          paragraphs: ['サンプル2: タイトル要素が存在しない文書です。']
+          paragraphs: ['サンプル3: タイトル要素が存在しない文書です。']
         });
       }
     },
     {
       id: 'no-core-part',
-      fileName: 'サンプル3_コアプロパティなし.docx',
+      fileName: 'サンプル4_コアプロパティなし.docx',
       label: 'コアプロパティ自体が無い文書',
-      note: 'docProps/core.xml がありません。パートの新規作成と関連付けの追加を確認できます。',
+      note: 'docProps/core.xml がありません。空にする場合は無変更、設定する場合はパートが新規作成されます。',
       build: function () {
-        return buildDocx('サンプル3_コアプロパティなし.docx', {
+        return buildDocx('サンプル4_コアプロパティなし.docx', {
           corePart: false,
           title: null,
-          paragraphs: ['サンプル3: コアプロパティのパートが無い文書です。']
+          paragraphs: ['サンプル4: コアプロパティのパートが無い文書です。']
         });
       }
     },
     {
       id: 'japanese-long',
-      fileName: 'サンプル4_日本語の長いタイトル.docx',
+      fileName: 'サンプル5_日本語の長いタイトル.docx',
       label: '日本語の長いタイトルの文書',
-      note: '全角文字を含む長いタイトルが正しく置き換わることを確認できます。',
+      note: '全角文字を含む長いタイトルが正しく消える／置き換わることを確認できます。',
       build: function () {
-        return buildDocx('サンプル4_日本語の長いタイトル.docx', {
+        return buildDocx('サンプル5_日本語の長いタイトル.docx', {
           corePart: true,
           title: '令和六年度 第三四半期 業務改善提案書（社内限）＜第二版＞',
-          paragraphs: ['サンプル4: 全角文字を含む長いタイトルの文書です。']
+          paragraphs: ['サンプル5: 全角文字を含む長いタイトルの文書です。']
         });
       }
     },
     {
       id: 'same-base-name',
-      fileName: 'サンプル5_名前が重複.docx',
+      fileName: 'サンプル6_名前が重複.docx',
       label: '出力名が重複するケース',
       note: 'サンプル1 と同じ内容です。同じ出力名になったときの (2) 付与を確認できます。',
       build: function () {
-        return buildDocx('サンプル5_名前が重複.docx', {
+        return buildDocx('サンプル6_名前が重複.docx', {
           corePart: true,
-          title: '旧タイトル（差し替え前）',
-          paragraphs: ['サンプル5: 出力名の重複を確認するための文書です。']
+          title: '社外秘_第一次案（差し替え前）',
+          paragraphs: ['サンプル6: 出力名の重複を確認するための文書です。']
         });
       }
     },
     {
       id: 'broken',
-      fileName: 'サンプル6_壊れたファイル.docx',
+      fileName: 'サンプル7_壊れたファイル.docx',
       label: '読み取れない壊れたファイル',
       note: '拡張子は .docx ですが中身が ZIP ではありません。エラー表示を確認できます。',
-      build: function () { return buildBrokenFile('サンプル6_壊れたファイル.docx'); }
+      build: function () { return buildBrokenFile('サンプル7_壊れたファイル.docx'); }
     }
   ];
 
