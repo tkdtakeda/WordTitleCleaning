@@ -75,14 +75,14 @@
   }
 
   /**
-   * フォルダーの中の Word 以外は黙って除く。
-   * 直接ドロップされたものは、理由が見えるように残して呼び出し側へ渡す。
+   * フォルダーの中は Word ファイル（.doc を含む）だけを拾う。
+   * 直接ドロップされたものは、理由が見えるようにすべて呼び出し側へ渡す。
    */
   function sortOutFiles(picked) {
     var accepted = [];
     var skipped = 0;
     picked.forEach(function (entry) {
-      if (WTC.DocxTitle.hasSupportedExtension(entry.file.name) || !entry.fromFolder) {
+      if (WTC.TitleService.hasSupportedExtension(entry.file.name) || !entry.fromFolder) {
         accepted.push(entry.file);
       } else {
         skipped++;

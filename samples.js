@@ -194,11 +194,29 @@
       }
     },
     {
+      id: 'doc-with-title',
+      fileName: 'サンプル7_旧形式_タイトルあり.doc',
+      label: '旧形式 .doc（タイトルあり）',
+      note: 'Shift_JIS のタイトルが入った旧形式ファイル。空にする動作を確認できます（Word で開ける完全な文書ではありません）。',
+      build: function () {
+        return WTC.SamplesDoc.build('サンプル7_旧形式_タイトルあり.doc', true);
+      }
+    },
+    {
+      id: 'doc-without-title',
+      fileName: 'サンプル8_旧形式_タイトルなし.doc',
+      label: '旧形式 .doc（タイトルなし）',
+      note: 'タイトルの項目が無い旧形式ファイル。無変更で出力されることを確認できます。',
+      build: function () {
+        return WTC.SamplesDoc.build('サンプル8_旧形式_タイトルなし.doc', false);
+      }
+    },
+    {
       id: 'broken',
-      fileName: 'サンプル7_壊れたファイル.docx',
+      fileName: 'サンプル9_壊れたファイル.docx',
       label: '読み取れない壊れたファイル',
       note: '拡張子は .docx ですが中身が ZIP ではありません。エラー表示を確認できます。',
-      build: function () { return buildBrokenFile('サンプル7_壊れたファイル.docx'); }
+      build: function () { return buildBrokenFile('サンプル9_壊れたファイル.docx'); }
     }
   ];
 

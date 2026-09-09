@@ -57,11 +57,13 @@
     cleared:   { label: '空にしました', icon: 'fa-solid fa-circle-check', modifier: 'done' },
     assigned:  { label: '設定しました', icon: 'fa-solid fa-circle-check', modifier: 'done' },
     unchanged: { label: 'もともと空', icon: 'fa-solid fa-circle-minus', modifier: 'unchanged' },
+    blocked:   { label: 'この形式は対象外', icon: 'fa-solid fa-ban', modifier: 'blocked' },
     error:     { label: '処理できません', icon: 'fa-solid fa-triangle-exclamation', modifier: 'error' }
   };
 
   /** 行のバッジを決める。処理後は「何をしたか」を文字で示す。 */
-  function badgeFor(item) {
+  function badgeFor(item, blocked) {
+    if (blocked && item.status !== STATUS.error) { return BADGES.blocked; }
     if (item.status !== STATUS.done || !item.report) {
       return BADGES[item.status] || BADGES.pending;
     }
@@ -137,7 +139,21 @@
       : formatBytes(item.size));
     addFact(list, '処理前のタイトル', formatTitle(report ? report.beforeTitle : item.currentTitle));
 
-    if (report && report.changed) {
+    if (report && report.changed && report.format === 'doc') {
+      addFact(list, 'ファイル形式', '旧形式 .doc（OLE2 複合ファイル）');
+      addFact(list, '行った処理',
+        'SummaryInformation のタイトル（PIDSI_TITLE）を空文字にし、元の文字が入っていたバイトを 0 で塗りつぶしました');
+      addFact(list, '処理後のタイトル', '（空）');
+      addFact(list, '書き換えたストリーム', '\u0005' + report.changedStream, true);
+      addFact(list, '消したバイト数', formatNumber(report.clearedByteCount) + ' バイト');
+      addFact(list, '値の型 / コードページ',
+        report.valueType + ' / ' + report.codePage + '（表示に使用）', true);
+      addFact(list, 'ファイル長',
+        'ストリーム長を変えないため、ファイル全体の大きさは ' +
+        formatNumber(report.byteSizeAfter) + ' バイトのまま変わりません');
+      addFact(list, '保存したファイル名', item.savedName || item.outputName, true);
+    } else if (report && report.changed) {
+      addFact(list, 'ファイル形式', 'OOXML（.docx 系）');
       addFact(list, '行った処理', report.mode === 'clear'
         ? 'docProps/core.xml から <dc:title> を要素ごと取り除きました'
         : 'docProps/core.xml の <dc:title> に指定した文字列を設定しました');
@@ -159,20 +175,27 @@
         addFact(list, '次に実行したときの名前', item.outputName, true);
       }
     } else if (report) {
-      addFact(list, '行った処理', 'もともと <dc:title> が無いため、何も書き換えていません');
-      addFact(list, '出力したファイル', '元のファイルをそのまま出力（全 ' +
-        formatNumber(report.totalPartCount) + ' パートがバイト単位で同一）');
+      addFact(list, '行った処理', report.format === 'doc'
+        ? 'もともとタイトルが入っていないため、何も書き換えていません'
+        : 'もともと <dc:title> が無いため、何も書き換えていません');
+      addFact(list, '出力したファイル', report.format === 'doc'
+        ? '元のファイルをそのまま出力（バイト単位で同一）'
+        : '元のファイルをそのまま出力（全 ' + formatNumber(report.totalPartCount) +
+          ' パートがバイト単位で同一）');
       addFact(list, '保存したファイル名', item.savedName || item.outputName, true);
       if (item.savedName && item.savedName !== item.outputName) {
         addFact(list, '次に実行したときの名前', item.outputName, true);
       }
     } else {
-      addFact(list, 'コアプロパティ',
-        item.hasCorePart === false
-          ? 'docProps/core.xml がありません'
-          : 'docProps/core.xml あり');
+      addFact(list, 'ファイル形式',
+        item.format === 'doc' ? '旧形式 .doc（OLE2 複合ファイル）' : 'OOXML（.docx 系）');
+      if (item.limitation) { addFact(list, 'この形式の制限', item.limitation); }
+      if (item.format !== 'doc') {
+        addFact(list, 'コアプロパティ',
+          item.hasCorePart === false ? 'docProps/core.xml がありません' : 'docProps/core.xml あり');
+      }
       addFact(list, '予定の出力ファイル名', item.outputName, true);
-      addFact(list, '根拠の詳細', '実行すると、書き換えたパートと CRC-32 がここに出ます');
+      addFact(list, '根拠の詳細', '実行すると、書き換えた場所と検証値がここに出ます');
     }
     box.appendChild(list);
     return box;
@@ -183,8 +206,8 @@
     container.appendChild(el('span', 'facts__val' + (mono ? ' facts__val--mono' : ''), value));
   }
 
-  function updateRow(row, item) {
-    var badgeInfo = badgeFor(item);
+  function updateRow(row, item, blocked) {
+    var badgeInfo = badgeFor(item, blocked);
 
     row.classList.toggle('row--error', item.status === STATUS.error);
     row.querySelector('.row__icon i').className =
@@ -197,13 +220,23 @@
       nameNode.appendChild(el('span', 'tag', 'サンプル'));
     }
 
-    row.querySelector('.row__meta').textContent = item.status === STATUS.error
-      ? item.error
-      : formatBytes(item.size) + '　現在のタイトル: ' + formatTitle(item.currentTitle);
+    var meta = row.querySelector('.row__meta');
+    if (item.status === STATUS.error) {
+      meta.textContent = item.error;
+    } else if (blocked) {
+      meta.textContent = item.limitation || 'この形式ではいまの処理を行えません';
+    } else {
+      /* 「空の項目」は取り除く対象があるときだけ言う。処理後は単に「空」 */
+      var titleText = (item.currentTitle === '' && !item.needsClearing)
+        ? '（空）' : formatTitle(item.currentTitle);
+      meta.textContent = formatBytes(item.size) + '　現在のタイトル: ' + titleText;
+    }
+    meta.title = meta.textContent;
 
-    var showSaved = item.status === STATUS.done && item.savedName;
+    var showSaved = item.status === STATUS.done && item.savedName && !blocked;
     var outName = row.querySelector('.row__outname');
-    outName.textContent = item.status === STATUS.error ? '—' : (showSaved ? item.savedName : item.outputName);
+    outName.textContent = (item.status === STATUS.error || blocked)
+      ? '—' : (showSaved ? item.savedName : item.outputName);
     outName.title = outName.textContent;
     row.querySelector('.row__outlabel').textContent = showSaved ? '保存した名前' : '出力ファイル名';
 
@@ -235,7 +268,7 @@
         row = createRow(item);
         cache[item.id] = row;
       }
-      updateRow(row, item);
+      updateRow(row, item, !store.canProcess(item));
       seen[item.id] = true;
       var expected = previous ? previous.nextSibling : listNode.firstChild;
       if (row !== expected) { listNode.insertBefore(row, expected); }
@@ -262,6 +295,7 @@
     } else {
       text = '全 ' + formatNumber(counts.total) + ' 件　' +
         '（処理できる ' + formatNumber(counts.convertible) + ' 件' +
+        (counts.blocked > 0 ? ' / この形式は対象外 ' + formatNumber(counts.blocked) + ' 件' : '') +
         (counts.error > 0 ? ' / 処理できない ' + formatNumber(counts.error) + ' 件' : '') +
         (counts.done > 0 ? ' / 処理済み ' + formatNumber(counts.done) + ' 件' : '') + '）';
     }

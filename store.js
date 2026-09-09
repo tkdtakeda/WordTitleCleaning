@@ -103,6 +103,10 @@
         currentTitle: null,
         hasCorePart: null,
         alreadyEmpty: null,
+        needsClearing: false,
+        format: null,
+        capabilities: null,
+        limitation: null,
         outputName: file.name,
         savedName: null,
         error: null,
@@ -171,26 +175,38 @@
   /* ---------------------------------------------------------------- *
    * 集計（画面に件数を出すため、数えるのは必ずこちら側で行う）
    * ---------------------------------------------------------------- */
+
+  /** いまのモードでこの行を処理できるか。形式ごとの対応可否で決まる。 */
+  Store.prototype.canProcess = function (item) {
+    if (item.status === STATUS.error) { return false; }
+    if (!item.capabilities) { return true; }
+    return this.settings.titleMode === TITLE_MODE.set
+      ? item.capabilities.set !== false
+      : item.capabilities.clear !== false;
+  };
   Store.prototype.counts = function () {
     var result = {
-      total: this.items.length, convertible: 0, error: 0,
+      total: this.items.length, convertible: 0, error: 0, blocked: 0,
       done: 0, sample: 0, pending: 0, needsClearing: 0
     };
     for (var i = 0; i < this.items.length; i++) {
       var item = this.items[i];
       if (item.isSample) { result.sample++; }
       if (item.status === STATUS.error) { result.error++; continue; }
+      if (!this.canProcess(item)) { result.blocked++; continue; }
       result.convertible++;
-      /* dc:title 要素があるものは、中身が空でも取り除く対象になる */
-      if (item.currentTitle !== null) { result.needsClearing++; }
+      /* 実際にファイルが変わる件数だけを数える（形式ごとの判定は解析時に済ませている） */
+      if (item.needsClearing) { result.needsClearing++; }
       if (item.status === STATUS.done) { result.done++; }
       if (item.status === STATUS.pending || item.status === STATUS.ready) { result.pending++; }
     }
     return result;
   };
 
-  Store.prototype.convertibleItems = function () {
-    return this.items.filter(function (item) { return item.status !== STATUS.error; });
+  /** いまのモードで処理できる行だけを返す。 */
+  Store.prototype.processableItems = function () {
+    var store = this;
+    return this.items.filter(function (item) { return store.canProcess(item); });
   };
 
   WTC.STATUS = STATUS;

@@ -103,7 +103,7 @@
   --w-modal-narrow: 460px;
   --size-menu-icon: 16px;
   --size-row-icon: 30px;
-  --w-badge: 126px;
+  --w-badge: 138px;
 
   /* --- 高さ --- */
   --h-control: 32px;
@@ -457,6 +457,7 @@ code {
 .badge--working { background: var(--c-brand-100); color: var(--c-brand-800); border-color: var(--c-brand-300); }
 .badge--done    { background: var(--c-ok-100); color: var(--c-ok-700); border-color: var(--c-ok-600); }
 .badge--unchanged { background: var(--c-surface-3); color: var(--c-ink-700); border-color: var(--c-line-strong); }
+.badge--blocked { background: var(--c-warn-100); color: var(--c-warn-700); border-color: var(--c-warn-600); }
 .badge--error   { background: var(--c-danger-100); color: var(--c-danger-700); border-color: var(--c-danger-600); }
 
 .facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--sp-2) var(--sp-5); }

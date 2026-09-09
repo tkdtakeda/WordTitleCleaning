@@ -119,7 +119,7 @@
 
     if (length < 22) { throw new Error('ZIP 形式ではありません（ファイルが小さすぎます）'); }
     if (bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0) {
-      throw new Error('旧形式（.doc）またはパスワード保護されたファイルです。この形式は変換できません');
+      throw new Error('中身が ZIP ではありません（パスワード保護された文書の可能性があります）');
     }
 
     var eocd = findEndOfCentralDirectory(view, length);

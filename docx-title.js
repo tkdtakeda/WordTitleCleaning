@@ -14,6 +14,8 @@
   var Zip = WTC.Zip;
 
   var MODE = { clear: 'clear', set: 'set' };
+  var FORMAT = 'ooxml';
+  var CAPABILITIES = { clear: true, set: true };
 
   var PART = {
     contentTypes: '[Content_Types].xml',
@@ -217,9 +219,6 @@
 
   /** ファイルを解析して現在のタイトルなどを返す（書き換えはしない）。 */
   function inspect(file) {
-    if (!hasSupportedExtension(file.name)) {
-      return Promise.reject(new Error('対応していない拡張子です（対応: ' + SUPPORTED_EXTENSIONS.join(' / ') + '）'));
-    }
     return file.arrayBuffer().then(function (buffer) {
       var entries = Zip.read(buffer);
       if (findEntry(entries, PART.document) < 0) {
@@ -229,15 +228,18 @@
       if (coreIndex < 0) {
         return {
           entries: entries, coreIndex: -1, currentTitle: null,
-          hasCorePart: false, byteSize: buffer.byteLength
+          hasCorePart: false, needsClearing: false, byteSize: buffer.byteLength
         };
       }
       return Zip.readEntryBytes(entries[coreIndex]).then(function (bytes) {
+        var title = readTitleFromCoreXml(decodeUtf8(bytes));
         return {
           entries: entries,
           coreIndex: coreIndex,
-          currentTitle: readTitleFromCoreXml(decodeUtf8(bytes)),
+          currentTitle: title,
           hasCorePart: true,
+          /* 要素が残っていれば、中身が空でも取り除く＝ファイルは変わる */
+          needsClearing: title !== null,
           byteSize: buffer.byteLength
         };
       });
@@ -246,6 +248,7 @@
 
   function buildReport(info, extra) {
     var report = {
+      format: FORMAT,
       mode: MODE.clear,
       changed: false,
       titleExisted: info.currentTitle !== null,
@@ -369,6 +372,8 @@
 
   WTC.DocxTitle = {
     MODE: MODE,
+    FORMAT: FORMAT,
+    CAPABILITIES: CAPABILITIES,
     SUPPORTED_EXTENSIONS: SUPPORTED_EXTENSIONS,
     hasSupportedExtension: hasSupportedExtension,
     sanitizeTitle: sanitizeTitle,

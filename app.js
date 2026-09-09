@@ -1,7 +1,7 @@
 /*!
  * app.js - Word Title Tool
  * 画面と各層をつなぐ制御役。状態は Store、描画は UI、
- * 変換は DocxTitle、名前は Naming に任せる。
+ * 形式ごとの処理は TitleService、名前は Naming に任せる。
  */
 (function (global) {
   'use strict';
@@ -9,7 +9,7 @@
   var WTC = global.WTC;
   var UI = WTC.UI;
   var Zip = WTC.Zip;
-  var DocxTitle = WTC.DocxTitle;
+  var TitleService = WTC.TitleService;
   var Naming = WTC.Naming;
   var Samples = WTC.Samples;
   var STATUS = WTC.STATUS;
@@ -62,13 +62,13 @@
    * 実際に保存した名前は savedName に別で残るので、上書きしても履歴は消えない。
    */
   function recomputeOutputNames() {
-    var targets = store.items.filter(function (item) { return item.status !== STATUS.error; });
+    var targets = store.processableItems();
     var built = Naming.buildAll(targets.map(function (item) { return item.name; }), namingOptions());
     targets.forEach(function (item, index) { item.outputName = built.names[index]; });
   }
 
   function previewNames() {
-    var targets = store.items.filter(function (item) { return item.status !== STATUS.error; });
+    var targets = store.processableItems();
     if (targets.length === 0) {
       return Naming.buildAll(PLACEHOLDER_NAMES, namingOptions()).names.map(function (name) {
         return '例）' + name;
@@ -138,12 +138,19 @@
     if (counts.convertible === 0) {
       return {
         canRun: false, tone: 'error',
-        message: '全 ' + counts.error + ' 件が読み取れないファイルです。各行の「根拠」ボタンで理由を確認できます',
+        message: counts.blocked > 0 && counts.error === 0
+          ? '全 ' + counts.blocked + ' 件が旧形式 .doc です。設定はできません（「タイトルを空にする」なら実行できます）'
+          : '処理できるファイルがありません（読み取れない ' + counts.error + ' 件' +
+            (counts.blocked > 0 ? ' / 旧形式で設定できない ' + counts.blocked + ' 件' : '') +
+            '）。各行の「根拠」ボタンで理由を確認できます',
         buttonLabel: verb
       };
     }
 
-    var leftover = counts.error > 0 ? '（読み取れない ' + counts.error + ' 件は対象外）' : '';
+    var excluded = [];
+    if (counts.error > 0) { excluded.push('読み取れない ' + counts.error + ' 件'); }
+    if (counts.blocked > 0) { excluded.push('旧形式 .doc で設定できない ' + counts.blocked + ' 件'); }
+    var leftover = excluded.length ? '（対象外: ' + excluded.join(' / ') + '）' : '';
     if (isSetMode()) {
       return {
         canRun: true,
@@ -187,12 +194,16 @@
   function inspectItems(items) {
     return items.reduce(function (chain, item) {
       return chain.then(function () {
-        return DocxTitle.inspect(item.file).then(function (info) {
+        return TitleService.inspect(item.file).then(function (info) {
           store.patchItem(item.id, {
             status: STATUS.ready,
             currentTitle: info.currentTitle,
             hasCorePart: info.hasCorePart,
-            alreadyEmpty: DocxTitle.isEmptyTitle(info.currentTitle)
+            format: info.format,
+            capabilities: info.capabilities,
+            needsClearing: info.needsClearing,
+            limitation: info.limitation,
+            alreadyEmpty: TitleService.isEmptyTitle(info.currentTitle)
           });
         }, function (error) {
           store.patchItem(item.id, { status: STATUS.error, error: messageOf(error) });
@@ -246,7 +257,7 @@
 
   function run(items) {
     var options = { mode: store.settings.titleMode, title: store.settings.title.trim() };
-    var targets = items.filter(function (item) { return item.status !== STATUS.error; });
+    var targets = items.filter(function (item) { return store.canProcess(item); });
     if (targets.length === 0) { return Promise.resolve(); }
     if (options.mode === WTC.TITLE_MODE.set && options.title === '') { return Promise.resolve(); }
 
@@ -265,7 +276,7 @@
       return chain.then(function () {
         store.patchItem(step.item.id, { status: STATUS.working }, true);
         refresh();
-        return DocxTitle.apply(step.item.file, options).then(function (output) {
+        return TitleService.apply(step.item.file, options).then(function (output) {
           if (!output.report.changed) { unchanged++; }
           store.patchItem(step.item.id, {
             status: STATUS.done,
@@ -273,7 +284,8 @@
             resultBlob: output.blob,
             savedName: step.name,
             currentTitle: output.report.afterTitle,
-            alreadyEmpty: DocxTitle.isEmptyTitle(output.report.afterTitle)
+            needsClearing: !TitleService.isEmptyTitle(output.report.afterTitle),
+            alreadyEmpty: TitleService.isEmptyTitle(output.report.afterTitle)
           }, true);
           results.push({ name: step.name, blob: output.blob });
         }, function (error) {
@@ -454,12 +466,12 @@
     var titleInput = $('input-title');
     titleInput.value = settings.title;
     titleInput.addEventListener('input', function () {
-      store.updateSettings({ title: DocxTitle.sanitizeTitle(titleInput.value) });
+      store.updateSettings({ title: WTC.DocxTitle.sanitizeTitle(titleInput.value) });
     });
     titleInput.addEventListener('keydown', function (event) {
       if (event.key !== 'Enter') { return; }
       event.preventDefault();
-      if (evaluateRun().canRun) { run(store.convertibleItems()); } else { $('btn-pick').focus(); }
+      if (evaluateRun().canRun) { run(store.processableItems()); } else { $('btn-pick').focus(); }
     });
 
     var nameTextInput = $('input-name-text');
@@ -702,7 +714,7 @@
     bindMenu();
     bindList();
     bindModals();
-    $('btn-run').addEventListener('click', function () { run(store.convertibleItems()); });
+    $('btn-run').addEventListener('click', function () { run(store.processableItems()); });
 
     store.subscribe(refresh);
     refresh();
