@@ -41,6 +41,12 @@
             <span class="menu__hint" id="menu-done-count">0 件</span>
           </button>
           <div class="menu__sep" role="separator"></div>
+          <button type="button" class="menu__item" id="btn-log" role="menuitem">
+            <i class="fa-solid fa-clipboard-list" aria-hidden="true"></i>
+            <span class="menu__label">診断ログを表示</span>
+            <span class="menu__hint" id="menu-log-count">0 件</span>
+          </button>
+          <div class="menu__sep" role="separator"></div>
           <button type="button" class="menu__item menu__item--danger" id="btn-clear-all" role="menuitem">
             <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
             <span class="menu__label">一覧をすべて消す</span>
@@ -465,6 +471,50 @@
         <input type="checkbox" id="check-help-start">
         <span>次に開いたときも、この説明を表示する</span>
       </label>
+      <span class="version" id="app-version"></span>
+      <button type="button" class="btn btn--primary" data-close="1">
+        <i class="fa-solid fa-check" aria-hidden="true"></i>
+        <span>閉じる</span>
+      </button>
+    </footer>
+  </div>
+</div>
+
+<!-- ============================ 診断ログ ============================ -->
+<div class="modal" id="modal-log" hidden>
+  <div class="modal__backdrop" data-close="1"></div>
+  <div class="modal__panel" role="dialog" aria-modal="true" aria-labelledby="log-title">
+    <header class="modal__head">
+      <h2 class="modal__title" id="log-title">
+        <i class="fa-solid fa-clipboard-list" aria-hidden="true"></i>
+        診断ログ
+      </h2>
+      <button type="button" class="iconbtn" data-close="1" aria-label="閉じる">
+        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+      </button>
+    </header>
+    <div class="modal__body">
+      <p class="help__p">
+        ドロップした内容や、ファイルを読めなかった理由をここに残しています。
+        うまくいかないときは、この内容をコピーして共有してください。
+      </p>
+      <pre class="logview" id="log-text"></pre>
+    </div>
+    <footer class="modal__foot">
+      <div class="modal__footleft">
+        <button type="button" class="btn btn--ghost" id="btn-log-copy">
+          <i class="fa-regular fa-copy" aria-hidden="true"></i>
+          <span id="btn-log-copy-label">クリップボードにコピー</span>
+        </button>
+        <button type="button" class="btn btn--quiet" id="btn-log-save">
+          <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i>
+          <span>テキストで保存</span>
+        </button>
+        <button type="button" class="btn btn--quiet" id="btn-log-clear">
+          <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+          <span>消去</span>
+        </button>
+      </div>
       <button type="button" class="btn btn--primary" data-close="1">
         <i class="fa-solid fa-check" aria-hidden="true"></i>
         <span>閉じる</span>
@@ -500,12 +550,14 @@
   <p style="padding:16px">このツールは JavaScript が有効な環境で動作します。</p>
 </noscript>
 
+<script src="log.js"></script>
 <script src="zip.js"></script>
 <script src="ole.js"></script>
 <script src="docx-title.js"></script>
 <script src="doc-title.js"></script>
 <script src="title-service.js"></script>
 <script src="naming.js"></script>
+<script src="saver.js"></script>
 <script src="samples-doc.js"></script>
 <script src="samples.js"></script>
 <script src="intake.js"></script>

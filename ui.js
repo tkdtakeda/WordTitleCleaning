@@ -301,6 +301,9 @@
     }
     $('filelist-counts').textContent = text;
 
+    var log = WTC.Log;
+    $('menu-log-count').textContent = formatNumber(log.count()) + ' 件' +
+      (log.problemCount() > 0 ? '（問題 ' + formatNumber(log.problemCount()) + '）' : '');
     $('menu-sample-count').textContent = formatNumber(counts.sample) + ' 件';
     $('menu-done-count').textContent = formatNumber(counts.done) + ' 件';
     $('menu-all-count').textContent = formatNumber(counts.total) + ' 件';
@@ -411,7 +414,7 @@
     if (options.actionLabel && options.onAction) {
       var action = el('button', 'toast__action');
       action.type = 'button';
-      action.appendChild(icon('fa-solid fa-rotate-left'));
+      action.appendChild(icon(options.actionIcon || 'fa-solid fa-rotate-left'));
       action.appendChild(el('span', null, options.actionLabel));
       action.addEventListener('click', function () { options.onAction(); close(); });
       toast.appendChild(action);
@@ -430,6 +433,12 @@
   function openModal(id) { $(id).hidden = false; }
   function closeModal(id) { $(id).hidden = true; }
 
+  /** 診断ログの中身を書き出す。 */
+  function renderLog(text) {
+    $('log-text').textContent = text;
+    $('log-text').scrollTop = $('log-text').scrollHeight;
+  }
+
   WTC.UI = {
     $: $,
     el: el,
@@ -443,6 +452,7 @@
     renderNamingPanel: renderNamingPanel,
     renderSavePanel: renderSavePanel,
     renderTitlePanel: renderTitlePanel,
+    renderLog: renderLog,
     showToast: showToast,
     openModal: openModal,
     closeModal: closeModal

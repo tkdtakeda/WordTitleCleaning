@@ -720,6 +720,15 @@ code {
 }
 .steps__title { font-size: var(--fs-md); font-weight: 600; color: var(--c-ink-900); }
 .steps__desc { font-size: var(--fs-md); color: var(--c-ink-700); }
+.logview {
+  font-family: var(--ff-mono); font-size: var(--fs-sm); line-height: var(--lh-tight);
+  background: var(--c-ink-900); color: hsl(0 0% 92%);
+  border-radius: var(--r-2); padding: var(--sp-4);
+  margin: 0; max-height: 46dvh; overflow: auto; white-space: pre-wrap; word-break: break-all;
+}
+.modal__footleft { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.version { font-size: var(--fs-xs); color: var(--c-ink-500); margin-left: auto; padding-right: var(--sp-4); }
+
 .code {
   font-family: var(--ff-mono); font-size: var(--fs-md);
   background: var(--c-surface-3); border-radius: var(--r-2); padding: var(--sp-3) var(--sp-4);

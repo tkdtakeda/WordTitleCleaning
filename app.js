@@ -1,7 +1,7 @@
 /*!
  * app.js - Word Title Tool
  * 画面と各層をつなぐ制御役。状態は Store、描画は UI、
- * 形式ごとの処理は TitleService、名前は Naming に任せる。
+ * 形式ごとの処理は TitleService、名前は Naming、保存は Saver に任せる。
  */
 (function (global) {
   'use strict';
@@ -10,6 +10,8 @@
   var UI = WTC.UI;
   var Zip = WTC.Zip;
   var TitleService = WTC.TitleService;
+  var Log = WTC.Log;
+  var Saver = WTC.Saver;
   var Naming = WTC.Naming;
   var Samples = WTC.Samples;
   var STATUS = WTC.STATUS;
@@ -24,22 +26,6 @@
    * ================================================================ */
   function messageOf(error) {
     return (error && error.message) ? error.message : String(error);
-  }
-
-  function delay(milliseconds) {
-    return new Promise(function (resolve) { global.setTimeout(resolve, milliseconds); });
-  }
-
-  function downloadBlob(blob, fileName) {
-    var url = global.URL.createObjectURL(blob);
-    var anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = fileName;
-    anchor.rel = 'noopener';
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
-    global.setTimeout(function () { global.URL.revokeObjectURL(url); }, 60000);
   }
 
   /* ================================================================ *
@@ -81,17 +67,6 @@
   /* ================================================================ *
    * 実行できるかの判定（件数はすべてここで数える）
    * ================================================================ */
-  function willUseZip(count) {
-    var mode = store.settings.saveMode;
-    return mode === 'zip' || (mode === 'auto' && count > 1);
-  }
-
-  function describeSave(count) {
-    return willUseZip(count)
-      ? 'ZIP 1 つにまとめて保存します'
-      : (count > 1 ? count + ' 件を 1 つずつ保存します' : '1 件を保存します');
-  }
-
   function isSetMode() {
     return store.settings.titleMode === WTC.TITLE_MODE.set;
   }
@@ -156,7 +131,7 @@
         canRun: true,
         tone: counts.error > 0 ? 'warn' : 'info',
         message: counts.convertible + ' 件に「' + title + '」を設定します。' +
-          describeSave(counts.convertible) + leftover,
+          Saver.describe(store.settings, counts.convertible) + leftover,
         buttonLabel: counts.convertible + ' 件の' + verb
       };
     }
@@ -168,7 +143,7 @@
         ? counts.convertible + ' 件はもともとタイトルがありません。実行してもファイルは変わりません' + leftover
         : counts.convertible + ' 件中 ' + counts.needsClearing + ' 件を空にします' +
           (untouched > 0 ? '（' + untouched + ' 件はもともとタイトルが無く無変更）' : '') + '。' +
-          describeSave(counts.convertible) + leftover,
+          Saver.describe(store.settings, counts.convertible) + leftover,
       buttonLabel: counts.convertible + ' 件の' + verb
     };
   }
@@ -183,7 +158,7 @@
     UI.renderTitlePanel(store.settings);
     UI.renderNamingPanel(store.settings, previewNames());
     UI.renderSavePanel(store.settings);
-    $('zipname-hint').textContent = '保存名: ' + zipFileName();
+    $('zipname-hint').textContent = '保存名: ' + Saver.zipFileName(store.settings);
     $('dropzone').classList.toggle('is-compact', store.items.length > 0);
     UI.renderAction(evaluateRun());
   }
@@ -195,6 +170,10 @@
     return items.reduce(function (chain, item) {
       return chain.then(function () {
         return TitleService.inspect(item.file).then(function (info) {
+          Log.info('解析しました', {
+            名前: item.name, 形式: info.format,
+            現在のタイトル: info.currentTitle, 空にする必要: info.needsClearing
+          });
           store.patchItem(item.id, {
             status: STATUS.ready,
             currentTitle: info.currentTitle,
@@ -206,6 +185,8 @@
             alreadyEmpty: TitleService.isEmptyTitle(info.currentTitle)
           });
         }, function (error) {
+          Log.warn('解析できませんでした',
+            { 名前: item.name, サイズ: item.size, 理由: messageOf(error) });
           store.patchItem(item.id, { status: STATUS.error, error: messageOf(error) });
         });
       });
@@ -221,40 +202,6 @@
   /* ================================================================ *
    * 変換と保存
    * ================================================================ */
-  function zipFileName() {
-    var base = Naming.sanitizePart(store.settings.zipName) || 'word-titles';
-    return base + '.zip';
-  }
-
-  function saveAsZip(results) {
-    return Promise.all(results.map(function (result) {
-      return result.blob.arrayBuffer().then(function (buffer) {
-        /* docx は既に圧縮済みなので、再圧縮せず格納する */
-        return Zip.createEntry(result.name, new Uint8Array(buffer), { compress: false });
-      });
-    })).then(function (entries) {
-      var bytes = Zip.build(entries);
-      downloadBlob(new Blob([bytes], { type: 'application/zip' }), zipFileName());
-      return { kind: 'zip', name: zipFileName(), count: results.length };
-    });
-  }
-
-  function saveEachFile(results) {
-    return results.reduce(function (chain, result, index) {
-      return chain.then(function () {
-        downloadBlob(result.blob, result.name);
-        return index < results.length - 1 ? delay(280) : null;
-      });
-    }, Promise.resolve()).then(function () {
-      return { kind: 'each', count: results.length };
-    });
-  }
-
-  function save(results) {
-    if (results.length === 0) { return Promise.resolve(null); }
-    return willUseZip(results.length) ? saveAsZip(results) : saveEachFile(results);
-  }
-
   function run(items) {
     var options = { mode: store.settings.titleMode, title: store.settings.title.trim() };
     var targets = items.filter(function (item) { return store.canProcess(item); });
@@ -297,7 +244,10 @@
         });
       });
     }, Promise.resolve()).then(function () {
-      return save(results);
+      Log.info('処理が終わりました', {
+        成功: results.length, 失敗: failed, 無変更: unchanged, モード: options.mode
+      });
+      return Saver.save(results, store.settings);
     }).then(function (saved) {
       store.processing = false;
       refresh();
@@ -305,6 +255,7 @@
     }, function (error) {
       store.processing = false;
       refresh();
+      Log.error('保存に失敗しました', { 理由: messageOf(error) });
       UI.showToast({ tone: 'error', message: '保存に失敗しました: ' + messageOf(error), duration: 12000 });
     });
   }
@@ -540,7 +491,7 @@
    * ドロップだけは、設定が揃っていればそのまま保存まで進める。
    */
   function handleIncoming(files, meta) {
-    if (meta.skipped > 0) {
+    if (meta.skipped > 0 && files.length > 0) {
       UI.showToast({
         tone: 'warn',
         message: 'フォルダー内の Word 以外 ' + meta.skipped + ' 件は読み込みませんでした',
@@ -548,9 +499,7 @@
       });
     }
     if (files.length === 0) {
-      if (meta.source === WTC.Intake.SOURCE.drop) {
-        UI.showToast({ tone: 'warn', message: '読み込めるファイルがありませんでした', duration: 8000 });
-      }
+      if (meta.source === WTC.Intake.SOURCE.drop) { reportEmptyDrop(meta); }
       return Promise.resolve([]);
     }
 
@@ -575,6 +524,32 @@
         return added;
       }
       return run(added).then(function () { return added; });
+    });
+  }
+
+  /**
+   * ドロップしたのに 1 件も取り込めなかったときは、必ず理由を出す。
+   * 何が届いていたのかは診断ログに残してある。
+   */
+  function reportEmptyDrop(meta) {
+    if (meta.reason === WTC.Intake.REASON.filtered) {
+      UI.showToast({
+        tone: 'warn',
+        message: 'ドロップした ' + meta.skipped + ' 件はどれも Word ファイルではありませんでした' +
+          '（対応: ' + TitleService.allExtensions().join(' / ') + '）',
+        duration: 12000
+      });
+      return;
+    }
+    UI.showToast({
+      tone: 'error',
+      message: 'ブラウザからファイルの実体を受け取れませんでした。' +
+        'メールの添付や ZIP の中から直接ドラッグした場合に起こります。' +
+        'いったんデスクトップ等へ保存してからお試しください（詳細は右上 ⋮ →「診断ログ」）',
+      duration: 20000,
+      actionLabel: '診断ログを見る',
+      actionIcon: 'fa-solid fa-clipboard-list',
+      onAction: openLog
     });
   }
 
@@ -606,6 +581,7 @@
       if (event.key === 'Escape' && !menu.hidden) { setOpen(false); }
     });
 
+    $('btn-log').addEventListener('click', function () { setOpen(false); });
     $('btn-clear-samples').addEventListener('click', function () { setOpen(false); clearSamples(); });
     $('btn-clear-done').addEventListener('click', function () {
       setOpen(false);
@@ -651,6 +627,44 @@
     }
   }
 
+  function openLog() {
+    UI.renderLog(Log.toText());
+    UI.openModal('modal-log');
+  }
+
+  function bindLogModal() {
+    $('btn-log').addEventListener('click', function () { openLog(); });
+    $('modal-log').addEventListener('click', function (event) {
+      if (event.target.closest('[data-close]')) { UI.closeModal('modal-log'); }
+    });
+
+    $('btn-log-copy').addEventListener('click', function () {
+      var label = $('btn-log-copy-label');
+      var done = function (ok) {
+        label.textContent = ok ? 'コピーしました' : 'コピーできませんでした（下の文字を選んでコピーしてください）';
+        global.setTimeout(function () { label.textContent = 'クリップボードにコピー'; }, 4000);
+      };
+      if (global.navigator.clipboard && global.navigator.clipboard.writeText) {
+        global.navigator.clipboard.writeText(Log.toText()).then(function () { done(true); },
+          function () { done(false); });
+      } else {
+        done(false);
+      }
+    });
+
+    $('btn-log-save').addEventListener('click', function () {
+      Saver.download(new Blob([Log.toText()], { type: 'text/plain;charset=utf-8' }),
+        'Wordタイトルクリーニング_診断ログ.txt');
+    });
+
+    $('btn-log-clear').addEventListener('click', function () {
+      Log.clear();
+      Log.info('診断ログを消去しました', { 版: Log.VERSION });
+      UI.renderLog(Log.toText());
+      refresh();
+    });
+  }
+
   function bindModals() {
     var open = function () {
       $('check-help-start').checked = store.settings.showHelpOnStart;
@@ -694,6 +708,7 @@
   function start() {
     var support = Zip.checkSupport();
     if (!support.ok) {
+      Log.error('この環境では動作しません', { 不足している機能: support.missing });
       $('unsupported-list').textContent = support.missing.join(' / ');
       UI.openModal('modal-unsupported');
       return;
@@ -707,6 +722,15 @@
       });
     }
 
+    Log.info('起動しました', {
+      版: Log.VERSION,
+      URL: global.location.protocol,
+      ブラウザ: global.navigator.userAgent,
+      圧縮機能: typeof global.CompressionStream === 'function' ? 'あり' : 'なし',
+      対応拡張子: TitleService.allExtensions().join(' / ')
+    });
+    $('app-version').textContent = '版 ' + Log.VERSION;
+
     renderSampleList();
     bindSamples();
     bindSettings();
@@ -714,6 +738,7 @@
     bindMenu();
     bindList();
     bindModals();
+    bindLogModal();
     $('btn-run').addEventListener('click', function () { run(store.processableItems()); });
 
     store.subscribe(refresh);
