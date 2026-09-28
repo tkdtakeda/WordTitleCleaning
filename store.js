@@ -20,7 +20,13 @@
 
   var SAVE_MODE = { auto: 'auto', each: 'each', zip: 'zip' };
 
-  var TITLE_MODE = { clear: 'clear', set: 'set' };
+  /* clear: 空にする / filename: 出力ファイル名（拡張子なし）にする / set: 同じ文字にする */
+  var TITLE_MODE = { clear: 'clear', filename: 'filename', set: 'set' };
+
+  /** タイトルを書き込む処理か（空にする以外）。形式の対応可否はここで判断する。 */
+  function isWriteMode(mode) {
+    return mode === TITLE_MODE.filename || mode === TITLE_MODE.set;
+  }
 
   var DEFAULT_SETTINGS = {
     titleMode: TITLE_MODE.clear,   /* このツールの主目的はタイトルを空にすること */
@@ -107,6 +113,8 @@
         format: null,
         capabilities: null,
         limitation: null,
+        details: null,            /* 形式ごとの補足（PDF のタブ表示の根拠など） */
+        appliedMode: null,        /* 実際に行った処理（clear / filename / set） */
         outputName: file.name,
         savedName: null,
         error: null,
@@ -180,14 +188,15 @@
   Store.prototype.canProcess = function (item) {
     if (item.status === STATUS.error) { return false; }
     if (!item.capabilities) { return true; }
-    return this.settings.titleMode === TITLE_MODE.set
+    return isWriteMode(this.settings.titleMode)
       ? item.capabilities.set !== false
       : item.capabilities.clear !== false;
   };
+
   Store.prototype.counts = function () {
     var result = {
       total: this.items.length, convertible: 0, error: 0, blocked: 0,
-      done: 0, sample: 0, pending: 0, needsClearing: 0
+      done: 0, sample: 0, pending: 0, needsClearing: 0, pdfUaAtRisk: 0
     };
     for (var i = 0; i < this.items.length; i++) {
       var item = this.items[i];
@@ -197,6 +206,8 @@
       result.convertible++;
       /* 実際にファイルが変わる件数だけを数える（形式ごとの判定は解析時に済ませている） */
       if (item.needsClearing) { result.needsClearing++; }
+      /* PDF/UA はタイトルが必須。空にすると準拠が崩れる件数を数えておく */
+      if (item.needsClearing && item.details && item.details.pdfUa) { result.pdfUaAtRisk++; }
       if (item.status === STATUS.done) { result.done++; }
       if (item.status === STATUS.pending || item.status === STATUS.ready) { result.pending++; }
     }
@@ -212,6 +223,7 @@
   WTC.STATUS = STATUS;
   WTC.SAVE_MODE = SAVE_MODE;
   WTC.TITLE_MODE = TITLE_MODE;
+  WTC.isWriteMode = isWriteMode;
   WTC.DEFAULT_SETTINGS = DEFAULT_SETTINGS;
   WTC.Store = Store;
 }(window));

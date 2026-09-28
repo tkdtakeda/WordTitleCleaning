@@ -19,7 +19,7 @@
     ok: 'ok',
     empty: 'empty',           /* ドラッグに項目自体が無い */
     noFileData: 'no-file-data', /* 項目はあるがファイルの実体が渡されない */
-    filtered: 'filtered'      /* Word ファイルが無く、すべて除外した */
+    filtered: 'filtered'      /* Word / PDF ファイルが無く、すべて除外した */
   };
 
   function byId(id) { return document.getElementById(id); }
@@ -190,7 +190,7 @@
   }
 
   /**
-   * フォルダーの中は Word ファイル（.doc を含む）だけを拾う。
+   * フォルダーの中は対応するファイル（Word の .doc を含む / PDF）だけを拾う。
    * 直接ドロップされたものは、理由が見えるようにすべて呼び出し側へ渡す。
    */
   function sortOutFiles(picked) {
@@ -268,7 +268,7 @@
       collectDropped(event.dataTransfer).then(function (picked) {
         var sorted = sortOutFiles(picked);
         if (sorted.skipped > 0) {
-          log().info('Word 以外を除外しました',
+          log().info('Word / PDF 以外を除外しました',
             { 件数: sorted.skipped, 名前: sorted.skippedNames.slice(0, 20) });
         }
         handlers.onFiles(sorted.accepted, {
