@@ -1,6 +1,6 @@
 @charset "UTF-8";
 /*!
- * styles.css - Word タイトル設定ツール
+ * styles.css - 文書タイトル クリーニング（Word / PDF）
  * 色・余白・角丸・文字サイズ・高さ・時間はすべてトークンで定義し、
  * 各コンポーネントは必ずトークンを参照する（生の px / カラーコードを書かない）。
  */
@@ -247,7 +247,8 @@ code {
 .btn--primary { background: var(--c-brand-600); color: hsl(0 0% 100%); box-shadow: var(--shadow-1); }
 .btn--primary:hover:not(:disabled) { background: var(--c-brand-500); }
 .btn--primary:active:not(:disabled) { background: var(--c-brand-700); }
-.btn--cta { height: var(--h-cta); min-width: var(--w-cta-min); font-size: var(--fs-lg); border-radius: var(--r-3); }
+.btn--cta { height: var(--h-cta); min-width: var(--w-cta-min); font-size: var(--fs-lg); border-radius: var(--r-3);
+            white-space: nowrap; flex: none; }   /* ラベルが長くても折り返さず、案内文の側を縮める */
 .btn--block { width: 100%; }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; box-shadow: none; }
 
@@ -444,6 +445,8 @@ code {
 .tag { display: inline-block; font-size: var(--fs-xs); padding: 0 var(--sp-2);
        border-radius: var(--r-1); background: var(--c-brand-100); color: var(--c-brand-800);
        margin-left: var(--sp-2); }
+.tag--warn { display: inline-flex; align-items: center; gap: var(--sp-1);
+             background: var(--c-warn-100); color: var(--c-warn-700); cursor: help; }
 
 .badge {
   display: inline-flex; align-items: center; gap: var(--sp-2);
@@ -464,6 +467,8 @@ code {
 .facts__key { font-size: var(--fs-xs); color: var(--c-ink-600); }
 .facts__val { font-size: var(--fs-xs); color: var(--c-ink-900); word-break: break-all; }
 .facts__val--mono { font-family: var(--ff-mono); }
+.facts__val--lines { white-space: pre-line; }          /* 複数の場所を 1 行ずつ並べる */
+.facts__val--warn { color: var(--c-warn-700); font-weight: 600; }
 .facts__title { font-size: var(--fs-sm); font-weight: 600; color: var(--c-ink-800); margin-bottom: var(--sp-3); }
 
 .emptystate { display: grid; place-items: center; gap: var(--sp-2); padding: var(--sp-8) var(--sp-5); text-align: center; }
@@ -557,7 +562,16 @@ code {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.samplelist { display: grid; gap: var(--sp-2); }
+.samplelist { display: grid; gap: var(--sp-4); }
+.samplegroup { display: grid; gap: var(--sp-2); }
+.samplegroup__head {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-sm); font-weight: 600; color: var(--c-ink-700);
+  cursor: pointer;
+}
+.samplegroup__head i { color: var(--c-brand-600); }
+.samplegroup__head input { margin: 0; accent-color: var(--c-brand-600); cursor: pointer; }
 .sample {
   display: flex; gap: var(--sp-3); align-items: flex-start;
   padding: var(--sp-3) var(--sp-4);
@@ -590,7 +604,11 @@ code {
 }
 .actionbar__status { display: flex; align-items: center; gap: var(--sp-3); flex: 1 1 auto; min-width: 0; }
 .actionbar__icon { font-size: var(--fs-lg); flex: none; }
-.actionbar__text { font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 案内文は 2 行まで出し、それを超える分は省略する（全文は title で見られる） */
+.actionbar__text {
+  font-size: var(--fs-md); line-height: var(--lh-tight); overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
 .actionbar__status[data-tone="neutral"] { color: var(--c-ink-600); }
 .actionbar__status[data-tone="info"] { color: var(--c-brand-700); }
 .actionbar__status[data-tone="warn"] { color: var(--c-warn-700); }

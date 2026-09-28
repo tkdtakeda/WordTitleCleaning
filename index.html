@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Word タイトル クリーニング</title>
+<title>文書タイトル クリーニング（Word / PDF）</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -14,10 +14,10 @@
   <!-- ============================ ヘッダー ============================ -->
   <header class="appbar">
     <div class="appbar__brand">
-      <span class="appbar__mark" aria-hidden="true"><i class="fa-solid fa-file-word"></i></span>
+      <span class="appbar__mark" aria-hidden="true"><i class="fa-solid fa-file-pen"></i></span>
       <div class="appbar__names">
-        <h1 class="appbar__title">Word タイトル クリーニング</h1>
-        <p class="appbar__subtitle">ドキュメントプロパティの「タイトル」だけを空にします</p>
+        <h1 class="appbar__title">文書タイトル クリーニング</h1>
+        <p class="appbar__subtitle">Word と PDF の「タイトル」だけを空にします（PDF はブラウザのタブに出る名前）</p>
       </div>
     </div>
     <div class="appbar__tools">
@@ -65,7 +65,7 @@
       <div class="dropzone__inner">
         <span class="dropzone__icon" aria-hidden="true"><i class="fa-solid fa-file-arrow-down"></i></span>
         <div class="dropzone__text">
-          <p class="dropzone__lead">ここに Word ファイルをドロップ</p>
+          <p class="dropzone__lead">ここに Word / PDF ファイルをドロップ</p>
           <p class="dropzone__sub" id="dropzone-sub">ドロップすると、そのままタイトルを空にして保存します</p>
         </div>
         <div class="dropzone__actions">
@@ -73,10 +73,10 @@
             <i class="fa-regular fa-folder-open" aria-hidden="true"></i>
             <span>ファイルを選ぶ（一覧に追加）</span>
           </button>
-          <p class="dropzone__note">対応形式: .docx / .docm / .dotx / .dotm / .doc / .dot　フォルダーごとのドロップも可。Ctrl+V での貼り付けは一覧に追加します</p>
+          <p class="dropzone__note">対応形式: .docx / .docm / .dotx / .dotm / .doc / .dot / .pdf　フォルダーごとのドロップも可。Ctrl+V での貼り付けは一覧に追加します</p>
         </div>
       </div>
-      <input type="file" id="file-input" multiple accept=".docx,.docm,.dotx,.dotm,.doc,.dot" hidden>
+      <input type="file" id="file-input" multiple accept=".docx,.docm,.dotx,.dotm,.doc,.dot,.pdf" hidden>
     </div>
 
     <section class="filelist" aria-labelledby="filelist-title">
@@ -115,22 +115,39 @@
             <input type="radio" name="title-mode" value="clear" checked>
             <span class="radio__body">
               <span class="radio__title">タイトルを空にする</span>
-              <span class="radio__desc">タイトルの文字を取り除きます</span>
+              <span class="radio__desc">Word のタイトルと、PDF のタブに出るタイトルを取り除きます</span>
+            </span>
+          </label>
+          <label class="radio">
+            <input type="radio" name="title-mode" value="filename">
+            <span class="radio__body">
+              <span class="radio__title">ファイル名をタイトルにする</span>
+              <span class="radio__desc">保存するファイル名（拡張子なし）を、それぞれに入れます</span>
             </span>
           </label>
           <label class="radio">
             <input type="radio" name="title-mode" value="set">
             <span class="radio__body">
-              <span class="radio__title">タイトルを設定する</span>
-              <span class="radio__desc">全ファイルに同じタイトルを入れます</span>
+              <span class="radio__title">同じタイトルを設定する</span>
+              <span class="radio__desc">全ファイルに同じ文字を入れます</span>
             </span>
           </label>
         </fieldset>
 
         <p class="field__hint" id="title-clear-note">
-          <code>docProps/core.xml</code> の <code>&lt;dc:title&gt;</code> を要素ごと取り除きます。
+          Word は <code>&lt;dc:title&gt;</code>、PDF は <code>/Title</code> と XMP の <code>dc:title</code> を取り除きます。
           もともとタイトルが無いファイルは、1 バイトも変更せずそのまま出力します。
         </p>
+
+        <div class="subfields" id="title-filename-fields" hidden>
+          <div class="preview" id="title-filename-preview">
+            <p class="preview__label"><i class="fa-regular fa-eye" aria-hidden="true"></i> 入るタイトル（出力ファイル名 → タイトル）</p>
+            <p class="preview__value" id="title-filename-value"></p>
+          </div>
+          <p class="field__hint">
+            「出力ファイル名」の設定を反映した名前から、拡張子を除いて入れます。旧形式 .doc は書き換えできません。
+          </p>
+        </div>
 
         <div class="subfields" id="title-set-fields" hidden>
           <div class="field">
@@ -294,7 +311,7 @@
       </summary>
       <div class="panel__body">
         <p class="field__hint">
-          その場で本物の Word ファイルを作って一覧に入れます。変換後に Word で開けば結果を確認できます。
+          その場で本物の Word / PDF ファイルを作って一覧に入れます。処理後に Word や Edge で開けば結果を確認できます。
         </p>
         <div class="samplelist" id="samplelist"></div>
         <div class="samplebtns">
@@ -320,7 +337,7 @@
   <footer class="actionbar">
     <div class="actionbar__status" id="status" data-tone="neutral">
       <span class="actionbar__icon" aria-hidden="true"><i class="fa-regular fa-circle-question"></i></span>
-      <span class="actionbar__text" id="status-text">Word ファイルを入れてください</span>
+      <span class="actionbar__text" id="status-text">Word / PDF ファイルを入れてください</span>
     </div>
     <div class="actionbar__progress" id="progress" hidden>
       <div class="bar"><div class="bar__fill" id="bar-fill"></div></div>
@@ -363,15 +380,14 @@
       <section class="help">
         <h3 class="help__h">できること</h3>
         <p class="help__p">
-          Word ファイル（.docx / .docm / .dotx / .dotm と、旧形式の .doc / .dot）の
-          <strong>ドキュメントプロパティ「タイトル」だけ</strong>を、まとめて空にします。
-          Word でいう〈ファイル → 情報 → プロパティ → タイトル〉の欄です。
-          配布前にタイトルへ残った旧ファイル名や見出しを消したいとき、
-          ドロップするだけで一括処理できます。
+          Word ファイル（.docx / .docm / .dotx / .dotm と、旧形式の .doc / .dot）と PDF の
+          <strong>「タイトル」だけ</strong>を、まとめて空にします。
+          Word では〈ファイル → 情報 → プロパティ → タイトル〉の欄、
+          PDF では<strong>ブラウザで開いたときにタブに出る名前</strong>がこれにあたります。
+          古いファイル名や見出しがタイトルに残ったまま配布するのを防げます。
         </p>
         <p class="help__p">
-          切り替えれば、逆に<strong>全ファイルへ同じタイトルを設定する</strong>こともできます。
-          ただし設定できるのは .docx 系のみです（下記「旧形式 .doc について」を参照）。
+          切り替えれば、<strong>ファイル名をタイトルにする</strong>ことも、<strong>全ファイルに同じタイトルを設定する</strong>こともできます。
         </p>
       </section>
 
@@ -384,7 +400,7 @@
               <p class="steps__title">ファイルをドロップする</p>
               <p class="steps__desc">
                 これだけで、タイトルを空にして保存まで進みます。
-                フォルダーごとのドロップにも対応します。
+                Word と PDF を混ぜても、フォルダーごとでもかまいません。
               </p>
             </div>
           </li>
@@ -394,7 +410,8 @@
               <p class="steps__title">中身を確かめたいときは「ファイルを選ぶ」</p>
               <p class="steps__desc">
                 こちらは一覧に追加するだけで、実行ボタンを押すまで何もしません。
-                現在のタイトルを一覧で確認してから実行できます。Ctrl+V での貼り付けも同じ動きです。
+                各行の「根拠」（<i class="fa-regular fa-eye" aria-hidden="true"></i>）で、いまのタイトルや、PDF がタブにどう表示されるかを確認できます。
+                Ctrl+V での貼り付けも同じ動きです。
               </p>
             </div>
           </li>
@@ -409,11 +426,37 @@
       </section>
 
       <section class="help">
-        <h3 class="help__h">「空にする」の中身</h3>
+        <h3 class="help__h">タイトルの処理の選び方</h3>
+        <ul class="help__ul">
+          <li><strong>タイトルを空にする（既定）</strong>：手元で開くならこれで十分です。PDF のタブにはファイル名が出ます。</li>
+          <li><strong>ファイル名をタイトルにする</strong>：保存するファイル名から拡張子を除いたものを入れます。
+            Web やイントラに置くと URL の末尾（例: download.aspx）がタブに出てしまう場合や、
+            アクセシビリティ規格（PDF/UA）でタイトルが必須の場合に向いています。
+            ただし、後でファイル名を変えてもタイトルは古いまま残ります。</li>
+          <li><strong>同じタイトルを設定する</strong>：全ファイルに同じ文字を入れます。</li>
+        </ul>
+      </section>
+
+      <section class="help">
+        <h3 class="help__h">PDF について</h3>
+        <ul class="help__ul">
+          <li>PDF のタイトルは 2 か所にあり、<strong>両方を処理します</strong>。
+            Edge / Chrome は文書情報辞書の <code>/Title</code> を、Firefox は XMP メタデータの <code>dc:title</code> を優先してタブに表示するためです。
+            Acrobat は「タイトルを表示する」設定（DisplayDocTitle）のときだけタイトルを出し、無ければファイル名を出します。</li>
+          <li><strong>空にする</strong>ときは、タイトルの部分を同じ長さの空白で塗りつぶします。ファイルの大きさも構造も変わりません。
+            圧縮されていて塗りつぶせない場所だけは、PDF 標準の追記保存でタイトルを除いた新しい版を末尾に足し、古い圧縮データは無効にして中身を消します。</li>
+          <li><strong>書き込む</strong>ときは、古いタイトルを同じ方法で消したうえで、新しい値を追記保存で足します。</li>
+          <li>以前の編集で追記保存された<strong>過去の版に残るタイトル</strong>も、あわせて消します。</li>
+          <li>保存する前に出力を読み直し、タイトルが期待どおりか、どこにも残っていないかを確かめます。確認で問題が見つかったときは保存しません。</li>
+          <li>PDF/UA（アクセシビリティ規格）への準拠を宣言している PDF は一覧に「PDF/UA」と出ます。タイトルが必須なので、空にすると要件を満たさなくなります。</li>
+        </ul>
+      </section>
+
+      <section class="help">
+        <h3 class="help__h">Word の「空にする」の中身</h3>
         <ul class="help__ul">
           <li><code>docProps/core.xml</code> の <code>&lt;dc:title&gt;</code> を<strong>要素ごと取り除きます</strong>。タイトルの文字はファイルのどこにも残りません。</li>
-          <li>もともとタイトルが無いファイルは、<strong>1 バイトも変更せず</strong>元のファイルをそのまま出力します。落としたファイルの数と保存されるファイルの数は必ず一致します。</li>
-          <li>タイトル以外のプロパティ（作成者・会社名・キーワードなど）は消えません。</li>
+          <li>もともとタイトルが無いファイルは、<strong>1 バイトも変更せず</strong>元のファイルをそのまま出力します（PDF も同じ）。落としたファイルの数と保存されるファイルの数は必ず一致します。</li>
         </ul>
       </section>
 
@@ -429,11 +472,10 @@
       <section class="help">
         <h3 class="help__h">変更されないもの</h3>
         <p class="help__p">
-          .docx 系で書き換えるのは <code>docProps/core.xml</code> だけ、.doc で書き換えるのは
-          <code>SummaryInformation</code> のタイトルの値だけです。
-          本文・書式・作成者・作成日時・更新日時・その他のプロパティには一切触れません。
-          タイトル以外のパートは<strong>圧縮されたままのバイト列をそのまま複製</strong>するので、内容が変化しません。
-          一覧の各行にある「根拠」ボタンから、実際に何を書き換えたかを確認できます。
+          書き換えるのはタイトルだけです。本文・書式・作成者・作成日時・更新日時・その他のプロパティには一切触れません。
+          .docx 系ではタイトル以外のパートを<strong>圧縮されたままのバイト列で複製</strong>し、.doc では <code>SummaryInformation</code> のタイトルの値だけを、
+          PDF ではタイトルの部分だけを書き換えます。
+          一覧の各行にある「根拠」（<i class="fa-regular fa-eye" aria-hidden="true"></i>）から、実際に何を書き換えたかを確認できます。
         </p>
       </section>
 
@@ -442,16 +484,18 @@
         <ul class="help__ul">
           <li><strong>「タイトルを空にする」は .doc でもそのまま使えます。</strong> .docx に変換する必要はありません。</li>
           <li>.doc ではタイトルが <code>SummaryInformation</code> という領域に入っています。その文字を 0 で塗りつぶすので、<strong>ファイルの大きさも中の構造も一切変わりません</strong>。</li>
-          <li><strong>「タイトルを設定する」は .doc では行えません。</strong> 文字数によって領域の大きさが変わり、ファイルを作り直す必要があってリスクが高いためです。設定したい場合は Word で .docx として保存し直してください。該当するファイルは一覧で「この形式は対象外」と表示されます。</li>
+          <li><strong>タイトルの書き込み（ファイル名・同じタイトル）は .doc では行えません。</strong> 文字数によって領域の大きさが変わり、ファイルを作り直す必要があってリスクが高いためです。Word で .docx として保存し直してください。該当するファイルは一覧で「この形式は対象外」と表示されます。</li>
         </ul>
       </section>
 
       <section class="help">
         <h3 class="help__h">できないこと</h3>
         <ul class="help__ul">
-          <li>パスワードで保護されたファイルは処理できません。</li>
+          <li>パスワードや暗号化で保護された Word / PDF は処理できません。</li>
+          <li>電子署名付きの PDF は処理できません（1 バイトでも書き換えると署名が無効になるため）。</li>
+          <li>相互参照が壊れている PDF は、位置を動かさずに消せる範囲でだけ「空にする」を行います。タイトルの書き込みはできません。</li>
           <li>ZIP64 形式（極端に大きいファイル）、暗号化された ZIP は読み取れません。</li>
-          <li>タイトル以外のプロパティ（作成者・会社名など）は消えません。Word の〈ドキュメント検査〉をお使いください。</li>
+          <li>タイトル以外のプロパティ（作成者・会社名など）は消えません。Word の〈ドキュメント検査〉などをお使いください。</li>
           <li>元のファイルを直接書き換えることはできません。必ず新しいファイルとして保存されます。</li>
         </ul>
       </section>
@@ -555,14 +599,23 @@
 <script src="ole.js"></script>
 <script src="docx-title.js"></script>
 <script src="doc-title.js"></script>
+<script src="pdf-syntax.js"></script>
+<script src="pdf-filters.js"></script>
+<script src="pdf-reader.js"></script>
+<script src="pdf-xmp.js"></script>
+<script src="pdf-writer.js"></script>
+<script src="pdf-title.js"></script>
 <script src="title-service.js"></script>
 <script src="naming.js"></script>
 <script src="saver.js"></script>
 <script src="samples-doc.js"></script>
+<script src="samples-pdf.js"></script>
 <script src="samples.js"></script>
 <script src="intake.js"></script>
 <script src="store.js"></script>
+<script src="run-state.js"></script>
 <script src="ui.js"></script>
+<script src="ui-detail.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

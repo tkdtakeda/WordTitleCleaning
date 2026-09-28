@@ -28,6 +28,11 @@
     return { base: fileName.slice(0, dot), extension: fileName.slice(dot) };
   }
 
+  /** 拡張子を除いた名前（「ファイル名をタイトルにする」で使う）。 */
+  function baseName(fileName) {
+    return splitName(String(fileName)).base;
+  }
+
   /** ファイル名に使えない文字を取り除く。 */
   function sanitizePart(text) {
     return String(text == null ? '' : text).replace(FORBIDDEN_CHARS, '').trim();
@@ -143,6 +148,7 @@
     POSITION: POSITION,
     DEFAULTS: DEFAULTS,
     splitName: splitName,
+    baseName: baseName,
     sanitizePart: sanitizePart,
     hasForbiddenChars: hasForbiddenChars,
     buildName: buildName,

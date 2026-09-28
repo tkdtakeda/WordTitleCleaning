@@ -1,6 +1,7 @@
 /*!
- * ui.js - Word Title Tool
+ * ui.js - 文書タイトル クリーニング
  * 画面への描画だけを担当する層。状態は持たず、渡されたものを表示する。
+ * 各行の「根拠」パネルの中身は ui-detail.js が作る。
  */
 (function (global) {
   'use strict';
@@ -55,20 +56,33 @@
     working:   { label: '処理中', icon: 'fa-solid fa-spinner fa-spin', modifier: 'working' },
     done:      { label: '処理済み', icon: 'fa-solid fa-circle-check', modifier: 'done' },
     cleared:   { label: '空にしました', icon: 'fa-solid fa-circle-check', modifier: 'done' },
+    renamed:   { label: 'ファイル名にしました', icon: 'fa-solid fa-circle-check', modifier: 'done' },
     assigned:  { label: '設定しました', icon: 'fa-solid fa-circle-check', modifier: 'done' },
     unchanged: { label: 'もともと空', icon: 'fa-solid fa-circle-minus', modifier: 'unchanged' },
     blocked:   { label: 'この形式は対象外', icon: 'fa-solid fa-ban', modifier: 'blocked' },
+    blockedFile: { label: 'この処理は対象外', icon: 'fa-solid fa-ban', modifier: 'blocked' },
     error:     { label: '処理できません', icon: 'fa-solid fa-triangle-exclamation', modifier: 'error' }
   };
 
   /** 行のバッジを決める。処理後は「何をしたか」を文字で示す。 */
   function badgeFor(item, blocked) {
-    if (blocked && item.status !== STATUS.error) { return BADGES.blocked; }
+    /* .doc は形式として書き込めない。PDF は相互参照が壊れているなど、そのファイル固有の理由 */
+    if (blocked && item.status !== STATUS.error) {
+      return item.format === 'pdf' ? BADGES.blockedFile : BADGES.blocked;
+    }
     if (item.status !== STATUS.done || !item.report) {
       return BADGES[item.status] || BADGES.pending;
     }
     if (!item.report.changed) { return BADGES.unchanged; }
-    return item.report.mode === 'clear' ? BADGES.cleared : BADGES.assigned;
+    if (item.report.mode === 'clear') { return BADGES.cleared; }
+    return item.appliedMode === 'filename' ? BADGES.renamed : BADGES.assigned;
+  }
+
+  /** 行のアイコン。形式が分かる前は拡張子で決める。 */
+  function rowIconFor(item) {
+    if (item.status === STATUS.error) { return 'fa-solid fa-file-circle-exclamation'; }
+    var isPdf = item.format ? item.format === 'pdf' : /\.pdf$/i.test(item.name);
+    return isPdf ? 'fa-regular fa-file-pdf' : 'fa-regular fa-file-word';
   }
 
   /* ---------------------------------------------------------------- *
@@ -116,115 +130,35 @@
     return row;
   }
 
-  /** 根拠パネルの中身を作る。 */
-  function buildDetail(item) {
-    var box = document.createDocumentFragment();
-    var report = item.report;
-
-    if (item.status === STATUS.error) {
-      box.appendChild(el('p', 'facts__title', '処理できない理由'));
-      var facts = el('div', 'facts');
-      addFact(facts, '理由', item.error || '不明なエラー');
-      addFact(facts, '判定方法', 'ZIP の中央ディレクトリと word/document.xml の有無を確認');
-      addFact(facts, 'ファイルサイズ', formatBytes(item.size));
-      box.appendChild(facts);
-      return box;
+  /** ファイル名の後ろに付ける小さな札（サンプル / PDF/UA）。 */
+  function renderTags(nameNode, item) {
+    if (item.isSample) { nameNode.appendChild(el('span', 'tag', 'サンプル')); }
+    if (item.details && item.details.pdfUa && item.status !== STATUS.done) {
+      var ua = el('span', 'tag tag--warn');
+      ua.appendChild(icon('fa-solid fa-universal-access'));
+      ua.appendChild(el('span', null, 'PDF/UA'));
+      ua.title = 'PDF/UA（アクセシビリティ規格）への準拠を宣言しています。タイトルが必須のため、' +
+        '空にすると要件を満たさなくなります。「ファイル名をタイトルにする」がおすすめです';
+      nameNode.appendChild(ua);
     }
-
-    box.appendChild(el('p', 'facts__title', report ? '実際に行った処理' : 'このファイルについて分かっていること'));
-    var list = el('div', 'facts');
-
-    addFact(list, 'ファイルサイズ', report
-      ? formatBytes(report.byteSizeBefore) + ' → ' + formatBytes(report.byteSizeAfter)
-      : formatBytes(item.size));
-    addFact(list, '処理前のタイトル', formatTitle(report ? report.beforeTitle : item.currentTitle));
-
-    if (report && report.changed && report.format === 'doc') {
-      addFact(list, 'ファイル形式', '旧形式 .doc（OLE2 複合ファイル）');
-      addFact(list, '行った処理',
-        'SummaryInformation のタイトル（PIDSI_TITLE）を空文字にし、元の文字が入っていたバイトを 0 で塗りつぶしました');
-      addFact(list, '処理後のタイトル', '（空）');
-      addFact(list, '書き換えたストリーム', '\u0005' + report.changedStream, true);
-      addFact(list, '消したバイト数', formatNumber(report.clearedByteCount) + ' バイト');
-      addFact(list, '値の型 / コードページ',
-        report.valueType + ' / ' + report.codePage + '（表示に使用）', true);
-      addFact(list, 'ファイル長',
-        'ストリーム長を変えないため、ファイル全体の大きさは ' +
-        formatNumber(report.byteSizeAfter) + ' バイトのまま変わりません');
-      addFact(list, '保存したファイル名', item.savedName || item.outputName, true);
-    } else if (report && report.changed) {
-      addFact(list, 'ファイル形式', 'OOXML（.docx 系）');
-      addFact(list, '行った処理', report.mode === 'clear'
-        ? 'docProps/core.xml から <dc:title> を要素ごと取り除きました'
-        : 'docProps/core.xml の <dc:title> に指定した文字列を設定しました');
-      addFact(list, '処理後のタイトル', report.mode === 'clear'
-        ? '（空／要素そのものが存在しません）'
-        : formatTitle(report.afterTitle));
-      addFact(list, '書き換えたパート',
-        (report.changedParts.length ? report.changedParts.join(' / ') : 'なし') +
-        (report.addedParts.length ? '　＋新規作成: ' + report.addedParts.join(' / ') : ''));
-      addFact(list, '無変更で複製したパート',
-        formatNumber(report.copiedPartCount) + ' / ' + formatNumber(report.totalPartCount) +
-        ' パート（圧縮データのままコピー）');
-      addFact(list, 'core.xml の CRC-32',
-        (report.coreCrcBefore === null ? '（元は存在しない）' : WTC.Zip.toHex8(report.coreCrcBefore)) +
-        ' → ' + WTC.Zip.toHex8(report.coreCrcAfter), true);
-      addFact(list, '文字コード', report.encoding + '（XML 宣言も UTF-8 で出力）');
-      addFact(list, '保存したファイル名', item.savedName || item.outputName, true);
-      if (item.savedName && item.savedName !== item.outputName) {
-        addFact(list, '次に実行したときの名前', item.outputName, true);
-      }
-    } else if (report) {
-      addFact(list, '行った処理', report.format === 'doc'
-        ? 'もともとタイトルが入っていないため、何も書き換えていません'
-        : 'もともと <dc:title> が無いため、何も書き換えていません');
-      addFact(list, '出力したファイル', report.format === 'doc'
-        ? '元のファイルをそのまま出力（バイト単位で同一）'
-        : '元のファイルをそのまま出力（全 ' + formatNumber(report.totalPartCount) +
-          ' パートがバイト単位で同一）');
-      addFact(list, '保存したファイル名', item.savedName || item.outputName, true);
-      if (item.savedName && item.savedName !== item.outputName) {
-        addFact(list, '次に実行したときの名前', item.outputName, true);
-      }
-    } else {
-      addFact(list, 'ファイル形式',
-        item.format === 'doc' ? '旧形式 .doc（OLE2 複合ファイル）' : 'OOXML（.docx 系）');
-      if (item.limitation) { addFact(list, 'この形式の制限', item.limitation); }
-      if (item.format !== 'doc') {
-        addFact(list, 'コアプロパティ',
-          item.hasCorePart === false ? 'docProps/core.xml がありません' : 'docProps/core.xml あり');
-      }
-      addFact(list, '予定の出力ファイル名', item.outputName, true);
-      addFact(list, '根拠の詳細', '実行すると、書き換えた場所と検証値がここに出ます');
-    }
-    box.appendChild(list);
-    return box;
-  }
-
-  function addFact(container, key, value, mono) {
-    container.appendChild(el('span', 'facts__key', key));
-    container.appendChild(el('span', 'facts__val' + (mono ? ' facts__val--mono' : ''), value));
   }
 
   function updateRow(row, item, blocked) {
     var badgeInfo = badgeFor(item, blocked);
 
     row.classList.toggle('row--error', item.status === STATUS.error);
-    row.querySelector('.row__icon i').className =
-      item.status === STATUS.error ? 'fa-solid fa-file-circle-exclamation' : 'fa-regular fa-file-word';
+    row.querySelector('.row__icon i').className = rowIconFor(item);
 
     var nameNode = row.querySelector('.row__name');
     nameNode.textContent = item.name;
     nameNode.title = item.name;
-    if (item.isSample && !nameNode.querySelector('.tag')) {
-      nameNode.appendChild(el('span', 'tag', 'サンプル'));
-    }
+    renderTags(nameNode, item);
 
     var meta = row.querySelector('.row__meta');
     if (item.status === STATUS.error) {
       meta.textContent = item.error;
     } else if (blocked) {
-      meta.textContent = item.limitation || 'この形式ではいまの処理を行えません';
+      meta.textContent = item.limitation || 'このファイルではいまの処理を行えません';
     } else {
       /* 「空の項目」は取り除く対象があるときだけ言う。処理後は単に「空」 */
       var titleText = (item.currentTitle === '' && !item.needsClearing)
@@ -250,7 +184,7 @@
     detail.hidden = !item.detailOpen;
     if (item.detailOpen) {
       detail.textContent = '';
-      detail.appendChild(buildDetail(item));
+      detail.appendChild(WTC.DetailView.build(item));
     }
     var detailButton = row.querySelector('[data-act="detail"]');
     detailButton.querySelector('i').className = item.detailOpen
@@ -295,7 +229,7 @@
     } else {
       text = '全 ' + formatNumber(counts.total) + ' 件　' +
         '（処理できる ' + formatNumber(counts.convertible) + ' 件' +
-        (counts.blocked > 0 ? ' / この形式は対象外 ' + formatNumber(counts.blocked) + ' 件' : '') +
+        (counts.blocked > 0 ? ' / この処理の対象外 ' + formatNumber(counts.blocked) + ' 件' : '') +
         (counts.error > 0 ? ' / 処理できない ' + formatNumber(counts.error) + ' 件' : '') +
         (counts.done > 0 ? ' / 処理済み ' + formatNumber(counts.done) + ' 件' : '') + '）';
     }
@@ -348,6 +282,18 @@
   /* ---------------------------------------------------------------- *
    * 設定パネルの表示
    * ---------------------------------------------------------------- */
+  /** 見本の値を書き換え、変わったときだけ一瞬光らせて「反映された」ことを伝える。 */
+  function updatePreview(previewId, valueId, lines, emptyText) {
+    var value = lines.length === 0 ? emptyText : lines.join('\n');
+    var valueNode = $(valueId);
+    if (valueNode.textContent === value) { return; }
+    var preview = $(previewId);
+    valueNode.textContent = value;
+    preview.classList.remove('is-updated');
+    void preview.offsetWidth;
+    preview.classList.add('is-updated');
+  }
+
   function renderNamingPanel(settings, sampleNames) {
     var mode = settings.nameMode;
     $('naming-text-fields').hidden = mode !== 'text';
@@ -357,35 +303,32 @@
     var stateLabel = mode === 'same' ? 'そのまま' : (mode === 'text' ? '自由記述' : '連番');
     $('naming-state').textContent = stateLabel;
 
-    var preview = $('naming-preview');
-    var value = sampleNames.length === 0
-      ? 'ファイルを入れると、ここに実際の名前が出ます'
-      : sampleNames.join('\n');
-    var valueNode = $('naming-preview-value');
-    if (valueNode.textContent !== value) {
-      valueNode.textContent = value;
-      preview.classList.remove('is-updated');
-      void preview.offsetWidth;
-      preview.classList.add('is-updated');
-    }
-
+    updatePreview('naming-preview', 'naming-preview-value', sampleNames, 'ファイルを入れると、ここに実際の名前が出ます');
     $('name-text-warn').hidden = !WTC.Naming.hasForbiddenChars($('input-name-text').value);
   }
 
   function renderSavePanel(settings) {
     var labels = { auto: '自動', each: '個別', zip: 'ZIP' };
-    var action = settings.titleMode === 'set' ? 'タイトルを設定して' : 'タイトルを空にして';
     $('save-state').textContent = labels[settings.saveMode] || '自動';
     $('zipname-field').hidden = settings.saveMode === 'each';
     $('dropzone-sub').textContent = settings.autoRunOnDrop
-      ? 'ドロップすると、そのまま' + action + '保存します'
+      ? 'ドロップすると、そのまま' + WTC.RunState.wordsFor(settings.titleMode).drop + '保存します'
       : 'ドロップしたファイルは一覧に追加します（実行は下のボタン）';
   }
 
-  function renderTitlePanel(settings) {
-    var isSetMode = settings.titleMode === 'set';
+  /**
+   * タイトルの処理パネル。選んだ処理に関わる欄だけを出す。
+   * @param {string[]} filenameTitles 「ファイル名をタイトルにする」で入る値の見本
+   */
+  function renderTitlePanel(settings, filenameTitles) {
+    var mode = settings.titleMode;
+    var isSetMode = mode === 'set';
     $('title-set-fields').hidden = !isSetMode;
-    $('title-clear-note').hidden = isSetMode;
+    $('title-filename-fields').hidden = mode !== 'filename';
+    $('title-clear-note').hidden = mode !== 'clear';
+    if (mode === 'filename') {
+      updatePreview('title-filename-preview', 'title-filename-value', filenameTitles, '');
+    }
     if (!isSetMode) { return; }
 
     var title = settings.title;

@@ -1,6 +1,6 @@
 /*!
- * app.js - Word Title Tool
- * 画面と各層をつなぐ制御役。状態は Store、描画は UI、
+ * app.js - 文書タイトル クリーニング
+ * 画面と各層をつなぐ制御役。状態は Store、描画は UI、実行できるかの判定は RunState、
  * 形式ごとの処理は TitleService、名前は Naming、保存は Saver に任せる。
  */
 (function (global) {
@@ -14,12 +14,15 @@
   var Saver = WTC.Saver;
   var Naming = WTC.Naming;
   var Samples = WTC.Samples;
+  var RunState = WTC.RunState;
   var STATUS = WTC.STATUS;
+  var TITLE_MODE = WTC.TITLE_MODE;
 
   var $ = UI.$;
   var store = new WTC.Store();
   var rowCache = Object.create(null);
-  var PLACEHOLDER_NAMES = ['報告書.docx', '議事録.docx'];
+  var PLACEHOLDER_NAMES = ['報告書.pdf', '議事録.docx'];
+  var PREVIEW_LIMIT = 3;
 
   /* ================================================================ *
    * 共通ユーティリティ
@@ -53,99 +56,38 @@
     targets.forEach(function (item, index) { item.outputName = built.names[index]; });
   }
 
-  function previewNames() {
+  /** 先頭の数件だけを見本として並べる（残りは件数で示す）。 */
+  function previewList(format) {
     var targets = store.processableItems();
     if (targets.length === 0) {
       return Naming.buildAll(PLACEHOLDER_NAMES, namingOptions()).names.map(function (name) {
-        return '例）' + name;
+        return '例）' + format(name);
       });
     }
-    return targets.slice(0, 3).map(function (item) { return item.outputName; })
-      .concat(targets.length > 3 ? ['… ほか ' + (targets.length - 3) + ' 件'] : []);
+    return targets.slice(0, PREVIEW_LIMIT).map(function (item) { return format(item.outputName); })
+      .concat(targets.length > PREVIEW_LIMIT ? ['… ほか ' + (targets.length - PREVIEW_LIMIT) + ' 件'] : []);
+  }
+
+  function previewNames() {
+    return previewList(function (name) { return name; });
+  }
+
+  /** 「ファイル名をタイトルにする」で実際に入る値の見本。 */
+  function previewFilenameTitles() {
+    return previewList(function (name) { return name + ' → ' + Naming.baseName(name); });
   }
 
   /* ================================================================ *
-   * 実行できるかの判定（件数はすべてここで数える）
+   * 実行できるかの判定
    * ================================================================ */
-  function isSetMode() {
-    return store.settings.titleMode === WTC.TITLE_MODE.set;
-  }
 
-  /** ボタンの動詞。状態によってラベルだけを変え、位置は動かさない。 */
-  function actionVerb() {
-    return isSetMode() ? 'タイトルを設定して保存' : 'タイトルを空にして保存';
+  /** 入力欄に文字を入れないと実行できない処理か（同じタイトルを設定する）。 */
+  function needsTitleInput() {
+    return store.settings.titleMode === TITLE_MODE.set && store.settings.title.trim() === '';
   }
 
   function evaluateRun() {
-    var counts = store.counts();
-    var title = store.settings.title.trim();
-    var verb = actionVerb();
-
-    if (store.processing) {
-      return {
-        canRun: false, tone: 'info', progress: store.progress,
-        message: isSetMode() ? 'タイトルを書き換えています' : 'タイトルを取り除いています',
-        buttonLabel: '処理中…'
-      };
-    }
-    var reading = store.items.filter(function (item) { return item.status === STATUS.pending; }).length;
-    if (reading > 0) {
-      return {
-        canRun: false, tone: 'info',
-        message: reading + ' 件を読み取っています。少しお待ちください',
-        buttonLabel: verb
-      };
-    }
-    if (counts.total === 0) {
-      return {
-        canRun: false, tone: 'neutral',
-        message: 'ファイルがありません。ドロップするか「ファイルを選ぶ」で追加してください',
-        buttonLabel: verb
-      };
-    }
-    if (isSetMode() && title === '') {
-      return {
-        canRun: false, tone: 'warn',
-        message: 'タイトルが未入力です。右の「設定するタイトル」に入れてください',
-        buttonLabel: verb
-      };
-    }
-    if (counts.convertible === 0) {
-      return {
-        canRun: false, tone: 'error',
-        message: counts.blocked > 0 && counts.error === 0
-          ? '全 ' + counts.blocked + ' 件が旧形式 .doc です。設定はできません（「タイトルを空にする」なら実行できます）'
-          : '処理できるファイルがありません（読み取れない ' + counts.error + ' 件' +
-            (counts.blocked > 0 ? ' / 旧形式で設定できない ' + counts.blocked + ' 件' : '') +
-            '）。各行の「根拠」ボタンで理由を確認できます',
-        buttonLabel: verb
-      };
-    }
-
-    var excluded = [];
-    if (counts.error > 0) { excluded.push('読み取れない ' + counts.error + ' 件'); }
-    if (counts.blocked > 0) { excluded.push('旧形式 .doc で設定できない ' + counts.blocked + ' 件'); }
-    var leftover = excluded.length ? '（対象外: ' + excluded.join(' / ') + '）' : '';
-    if (isSetMode()) {
-      return {
-        canRun: true,
-        tone: counts.error > 0 ? 'warn' : 'info',
-        message: counts.convertible + ' 件に「' + title + '」を設定します。' +
-          Saver.describe(store.settings, counts.convertible) + leftover,
-        buttonLabel: counts.convertible + ' 件の' + verb
-      };
-    }
-    var untouched = counts.convertible - counts.needsClearing;
-    return {
-      canRun: true,
-      tone: counts.error > 0 ? 'warn' : 'info',
-      message: counts.needsClearing === 0
-        ? counts.convertible + ' 件はもともとタイトルがありません。実行してもファイルは変わりません' + leftover
-        : counts.convertible + ' 件中 ' + counts.needsClearing + ' 件を空にします' +
-          (untouched > 0 ? '（' + untouched + ' 件はもともとタイトルが無く無変更）' : '') + '。' +
-          Saver.describe(store.settings, counts.convertible) + leftover,
-      buttonLabel: counts.convertible + ' 件の' + verb
-    };
+    return RunState.evaluate(store);
   }
 
   /* ================================================================ *
@@ -155,7 +97,7 @@
     recomputeOutputNames();
     UI.renderList(store, rowCache);
     UI.renderCounts(store.counts());
-    UI.renderTitlePanel(store.settings);
+    UI.renderTitlePanel(store.settings, previewFilenameTitles());
     UI.renderNamingPanel(store.settings, previewNames());
     UI.renderSavePanel(store.settings);
     $('zipname-hint').textContent = '保存名: ' + Saver.zipFileName(store.settings);
@@ -182,6 +124,7 @@
             capabilities: info.capabilities,
             needsClearing: info.needsClearing,
             limitation: info.limitation,
+            details: info.details,
             alreadyEmpty: TitleService.isEmptyTitle(info.currentTitle)
           });
         }, function (error) {
@@ -202,14 +145,28 @@
   /* ================================================================ *
    * 変換と保存
    * ================================================================ */
+  /**
+   * 1 件ごとに書き込むタイトルを決める。
+   * 「ファイル名をタイトルにする」は、保存する名前（出力ファイル名）から拡張子を除いたもの。
+   */
+  function titleFor(mode, outputName) {
+    if (mode === TITLE_MODE.filename) { return Naming.baseName(outputName); }
+    return mode === TITLE_MODE.set ? store.settings.title.trim() : '';
+  }
+
   function run(items) {
-    var options = { mode: store.settings.titleMode, title: store.settings.title.trim() };
+    var mode = store.settings.titleMode;
     var targets = items.filter(function (item) { return store.canProcess(item); });
-    if (targets.length === 0) { return Promise.resolve(); }
-    if (options.mode === WTC.TITLE_MODE.set && options.title === '') { return Promise.resolve(); }
+    if (targets.length === 0 || needsTitleInput()) { return Promise.resolve(); }
 
     recomputeOutputNames();
-    var plan = targets.map(function (item) { return { item: item, name: item.outputName }; });
+    var plan = targets.map(function (item) {
+      return {
+        item: item,
+        name: item.outputName,
+        options: { mode: WTC.isWriteMode(mode) ? 'set' : 'clear', title: titleFor(mode, item.outputName) }
+      };
+    });
 
     store.processing = true;
     store.progress = { done: 0, total: plan.length };
@@ -223,13 +180,14 @@
       return chain.then(function () {
         store.patchItem(step.item.id, { status: STATUS.working }, true);
         refresh();
-        return TitleService.apply(step.item.file, options).then(function (output) {
+        return TitleService.apply(step.item.file, step.options).then(function (output) {
           if (!output.report.changed) { unchanged++; }
           store.patchItem(step.item.id, {
             status: STATUS.done,
             report: output.report,
             resultBlob: output.blob,
             savedName: step.name,
+            appliedMode: mode,
             currentTitle: output.report.afterTitle,
             needsClearing: !TitleService.isEmptyTitle(output.report.afterTitle),
             alreadyEmpty: TitleService.isEmptyTitle(output.report.afterTitle)
@@ -237,6 +195,7 @@
           results.push({ name: step.name, blob: output.blob });
         }, function (error) {
           failed++;
+          Log.warn('処理できませんでした', { 名前: step.item.name, 理由: messageOf(error) });
           store.patchItem(step.item.id, { status: STATUS.error, error: messageOf(error) }, true);
         }).then(function () {
           store.progress = { done: index + 1, total: plan.length };
@@ -245,7 +204,7 @@
       });
     }, Promise.resolve()).then(function () {
       Log.info('処理が終わりました', {
-        成功: results.length, 失敗: failed, 無変更: unchanged, モード: options.mode
+        成功: results.length, 失敗: failed, 無変更: unchanged, モード: mode
       });
       return Saver.save(results, store.settings);
     }).then(function (saved) {
@@ -358,27 +317,61 @@
   /* ================================================================ *
    * サンプルデータ
    * ================================================================ */
+  function sampleCheckbox(value, className) {
+    var checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = true;
+    if (value) { checkbox.value = value; }
+    if (className) { checkbox.className = className; }
+    return checkbox;
+  }
+
+  /** 形式（Word / PDF）ごとにまとめて並べる。見出しのチェックでその形式をまとめて選べる。 */
   function renderSampleList() {
     var container = $('samplelist');
     container.textContent = '';
-    Samples.CATALOG.forEach(function (sample) {
-      var label = UI.el('label', 'sample');
-      var checkbox = document.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.value = sample.id;
-      checkbox.checked = true;
-      label.appendChild(checkbox);
-      var body = UI.el('span');
-      body.appendChild(UI.el('span', 'sample__title', sample.label));
-      body.appendChild(document.createElement('br'));
-      body.appendChild(UI.el('span', 'sample__desc', sample.note));
-      label.appendChild(body);
-      container.appendChild(label);
+    Samples.GROUPS.forEach(function (group) {
+      var box = UI.el('div', 'samplegroup');
+      var head = UI.el('label', 'samplegroup__head');
+      var toggle = sampleCheckbox(null, 'samplegroup__toggle');
+      head.appendChild(toggle);
+      head.appendChild(UI.icon(group.icon));
+      head.appendChild(UI.el('span', null, group.label));
+      box.appendChild(head);
+
+      Samples.CATALOG.filter(function (sample) { return sample.group === group.id; }).forEach(function (sample) {
+        var label = UI.el('label', 'sample');
+        label.appendChild(sampleCheckbox(sample.id, 'sample__check'));
+        var body = UI.el('span');
+        body.appendChild(UI.el('span', 'sample__title', sample.label));
+        body.appendChild(document.createElement('br'));
+        body.appendChild(UI.el('span', 'sample__desc', sample.note));
+        label.appendChild(body);
+        box.appendChild(label);
+      });
+      container.appendChild(box);
+    });
+  }
+
+  /** 見出しのチェックと、その下の各サンプルのチェックを連動させる。 */
+  function bindSampleGroups() {
+    $('samplelist').addEventListener('change', function (event) {
+      var box = event.target.closest('.samplegroup');
+      if (!box) { return; }
+      var items = Array.prototype.slice.call(box.querySelectorAll('.sample__check'));
+      var toggle = box.querySelector('.samplegroup__toggle');
+      if (event.target === toggle) {
+        items.forEach(function (item) { item.checked = toggle.checked; });
+        return;
+      }
+      var checked = items.filter(function (item) { return item.checked; }).length;
+      toggle.checked = checked === items.length;
+      toggle.indeterminate = checked > 0 && checked < items.length;
     });
   }
 
   function loadSamples() {
-    var checked = Array.prototype.slice.call($('samplelist').querySelectorAll('input:checked'))
+    var checked = Array.prototype.slice.call($('samplelist').querySelectorAll('.sample__check:checked'))
       .map(function (input) { return input.value; });
     if (checked.length === 0) {
       UI.showToast({ tone: 'warn', message: '読み込むサンプルが選ばれていません', duration: 6000 });
@@ -397,6 +390,7 @@
   }
 
   function bindSamples() {
+    bindSampleGroups();
     $('btn-load-samples').addEventListener('click', loadSamples);
     $('btn-clear-samples-2').addEventListener('click', clearSamples);
   }
@@ -459,7 +453,7 @@
       radio.addEventListener('change', function () {
         if (!radio.checked) { return; }
         store.updateSettings({ titleMode: radio.value });
-        if (radio.value === WTC.TITLE_MODE.set) { titleInput.focus(); }
+        if (radio.value === TITLE_MODE.set) { titleInput.focus(); }
       });
     });
     setRadio('title-mode', settings.titleMode);
@@ -494,7 +488,7 @@
     if (meta.skipped > 0 && files.length > 0) {
       UI.showToast({
         tone: 'warn',
-        message: 'フォルダー内の Word 以外 ' + meta.skipped + ' 件は読み込みませんでした',
+        message: 'フォルダー内の Word / PDF 以外 ' + meta.skipped + ' 件は読み込みませんでした',
         duration: 8000
       });
     }
@@ -514,7 +508,7 @@
         });
         return added;
       }
-      if (isSetMode() && store.settings.title.trim() === '') {
+      if (needsTitleInput()) {
         UI.showToast({
           tone: 'warn',
           message: 'タイトルが未入力のため、' + added.length + ' 件を一覧に追加して待機しています',
@@ -535,7 +529,7 @@
     if (meta.reason === WTC.Intake.REASON.filtered) {
       UI.showToast({
         tone: 'warn',
-        message: 'ドロップした ' + meta.skipped + ' 件はどれも Word ファイルではありませんでした' +
+        message: 'ドロップした ' + meta.skipped + ' 件はどれも Word / PDF ファイルではありませんでした' +
           '（対応: ' + TitleService.allExtensions().join(' / ') + '）',
         duration: 12000
       });
@@ -558,7 +552,8 @@
       onFiles: handleIncoming,
       veilText: function () {
         if (!store.settings.autoRunOnDrop) { return '一覧に追加します'; }
-        return isSetMode() ? 'タイトルを設定して保存します' : 'タイトルを空にして保存します';
+        if (needsTitleInput()) { return '一覧に追加します（設定するタイトルが未入力のため）'; }
+        return RunState.wordsFor(store.settings.titleMode).drop + '保存します';
       }
     });
   }
@@ -620,7 +615,7 @@
 
   /** 次にすることへフォーカスを置く。 */
   function focusFirstStep() {
-    if (isSetMode() && store.settings.title.trim() === '') {
+    if (needsTitleInput()) {
       $('input-title').focus();
     } else {
       $('btn-pick').focus();
@@ -654,7 +649,7 @@
 
     $('btn-log-save').addEventListener('click', function () {
       Saver.download(new Blob([Log.toText()], { type: 'text/plain;charset=utf-8' }),
-        'Wordタイトルクリーニング_診断ログ.txt');
+        '文書タイトルクリーニング_診断ログ.txt');
     });
 
     $('btn-log-clear').addEventListener('click', function () {

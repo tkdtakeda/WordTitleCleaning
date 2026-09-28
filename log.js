@@ -11,7 +11,7 @@
 
   var WTC = global.WTC = global.WTC || {};
 
-  var VERSION = '2026-09-09.4';       /* 画面と突き合わせて版を確認するための印 */
+  var VERSION = '2026-09-28.1';       /* 画面と突き合わせて版を確認するための印 */
   var LIMIT = 400;                    /* 古いものから捨てる上限 */
 
   var LEVEL = { info: 'info', warn: 'warn', error: 'error' };
@@ -52,7 +52,7 @@
   /** 貼り付けて渡せる 1 枚のテキストにする。 */
   function toText() {
     var lines = [
-      '== Word タイトル クリーニング 診断ログ ==',
+      '== 文書タイトル クリーニング 診断ログ ==',
       '版: ' + VERSION,
       '出力日時: ' + new Date().toString(),
       ''
